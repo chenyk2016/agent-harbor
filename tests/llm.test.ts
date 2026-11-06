@@ -250,6 +250,7 @@ test("LLM: deployment versions, scoped catalogs, per-message choice, key lifecyc
       routeName: createdB.versions[0].routeName,
     };
     assert.equal(deployed[0].litellm_params.model, "custom_openai/target-a");
+    assert.equal(deployed[0].litellm_params.allowed_openai_params, undefined);
     assert.equal(deployed[0].model_info.id, a.versionId);
     assert.equal(deployed[0].model_name, a.routeName);
     await service.syncDeployment(a.id);
@@ -683,6 +684,19 @@ test("LLM: deployment versions, scoped catalogs, per-message choice, key lifecyc
     await service.completeSetup(setupModelId, setupVersion, "a");
     assert((await service.catalog("a")).models.some(model => model.id === setupModelId));
     assert(!(await service.catalog("b")).models.some(model => model.id === setupModelId));
+
+    const deepSeek = await service.addProvider({
+      name: "DeepSeek", apiBase: "https://api.deepseek.com/v1",
+      format: "openai_chat", apiKey: "fixture-upstream-secret",
+    }, "a");
+    const deepSeekModel = await service.createDeployment({
+      providerId: deepSeek.id, name: "DeepSeek Flash", upstreamModel: "deepseek-flash",
+      tools: true, streaming: true, params: { allowed_openai_params: ["thinking"] },
+    }, "a");
+    const deepSeekRoute = deployed.find(row => row.model_info.id === deepSeekModel.deployment.currentVersionId);
+    assert.equal(deepSeekRoute.litellm_params.model, "custom_openai/deepseek-flash");
+    assert.equal(deepSeekRoute.litellm_params.api_base, "https://api.deepseek.com/v1");
+    assert.deepEqual(deepSeekRoute.litellm_params.allowed_openai_params, ["thinking", "reasoning_effort"]);
 
     const restarted = new LlmService(database.db, root, {
       managementUrl: url,

@@ -1147,11 +1147,21 @@ export class LlmService {
     const cost = await this.costForIdentity(provider.id, version.upstreamModel);
     if (this.settings.policy && !cost) fail(409, "MODEL_COST_REQUIRED");
     const modelName = `${upstreamPrefix(provider.format)}/${version.upstreamModel}`;
+    const deepSeekOpenAi = provider.format === "openai_chat" &&
+      ["https://api.deepseek.com", "https://api.deepseek.com/v1"].includes(provider.apiBase);
+    const allowedOpenAiParams = version.params.allowed_openai_params;
     const desired = {
       model: modelName,
       api_base: provider.apiBase,
       api_key: apiKey,
       ...version.params,
+      // DeepSeek accepts this field, but LiteLLM's generic OpenAI route rejects it by default.
+      ...(deepSeekOpenAi ? {
+        allowed_openai_params: [...new Set([
+          ...(Array.isArray(allowedOpenAiParams) ? allowedOpenAiParams : []),
+          "reasoning_effort",
+        ])],
+      } : {}),
       ...(cost
         ? {
             ...modelPolicyFields(cost),

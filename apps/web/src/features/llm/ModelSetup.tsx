@@ -29,9 +29,10 @@ const formats = [
 const diagnostics: Record<string, string> = {
   MODEL_PROBE_SYNC_FAILED: "配置已保存，暂时无法同步到网关。请检查网关连接后重试。",
   MODEL_PROBE_UPSTREAM_AUTH: "供应商拒绝了 API Key。更换密钥后可以在这里重试。",
+  MODEL_PROBE_UPSTREAM_REQUEST: "模型网关拒绝了测试请求（HTTP 400）。请核对接口协议、模型 ID，以及模型是否支持工具调用和流式输出。",
   MODEL_PROBE_UPSTREAM_MODEL: "供应商找不到这个模型，或该密钥无权调用。请返回选择模型。",
   MODEL_PROBE_FAILED: "Agent 没有完成测试。请检查供应商用量、接口地址和运行环境，再重试。",
-  MODEL_PROBE_TOOL_FAILED: "模型有回复，但没有成功读取指定文件。请换一个支持工具调用的模型。",
+  MODEL_PROBE_TOOL_FAILED: "测试未确认模型读取指定文件。请检查模型是否支持工具调用后重试。",
   MODEL_PROBE_STREAM_FAILED: "工具已运行，但没有收到正确的流式结果。请重试或换一个模型。",
   MODEL_PROBE_TIMEOUT: "测试超时。请检查供应商响应或运行环境后重试。",
   MODEL_PROBE_VERSION_CHANGED: "测试时模型版本发生了变化，请重试。",

@@ -97,24 +97,25 @@ export function modelProbeRouter(llm: LlmService, manager: SessionManager, store
         cursor = batch.at(-1)?.eventId ?? cursor;
         events.push(...batch.filter(event => event.messageId === message.id));
         Object.assign(job, modelProbeEvidence(events, marker));
-        // Stop early on a definitive provider rejection. The SDK may still be retrying.
         const last = events.findLast(event => event.type === "message.finished");
-        if (llm.settings.walletProxyUrl && (!job.tool || last?.payload.status !== "succeeded")) {
-          const failures = await manager.store.db.execute(sql`SELECT "failureCode" FROM wallet_requests
-            WHERE "sessionId"=${sessionId} AND "failureCode" IS NOT NULL ORDER BY "createdAt" DESC LIMIT 1`);
-          const code = String(failures.rows[0]?.failureCode ?? "");
+        const terminal = batch.length < 100 ? last : undefined;
+        if (terminal?.payload.status === "succeeded" && job.tool && job.stream) break;
+
+        if (llm.settings.walletProxyUrl && (terminal || !job.tool || last?.payload.status !== "succeeded")) {
+          // Include successful and in-flight requests so a previous failure cannot mask a retry.
+          const requests = await manager.store.db.execute(sql`SELECT "failureCode" FROM wallet_requests
+            WHERE "sessionId"=${sessionId} ORDER BY "createdAt" DESC, "finishedAt" DESC NULLS FIRST LIMIT 1`);
+          const code = requests.rows[0]?.failureCode;
           if (code === "UPSTREAM_HTTP_401" || code === "UPSTREAM_HTTP_403")
             fail(502, "MODEL_PROBE_UPSTREAM_AUTH");
           if (code === "UPSTREAM_HTTP_404") fail(502, "MODEL_PROBE_UPSTREAM_MODEL");
+          if (terminal && code === "UPSTREAM_HTTP_400") fail(502, "MODEL_PROBE_UPSTREAM_REQUEST");
         }
-        if (last && batch.length < 100) {
-          if (last.payload.status !== "succeeded" || !job.tool || !job.stream) {
-            const result = last.payload.result as { error?: string } | undefined;
-            if (result?.error === "TASK_TIMEOUT") fail(504, "MODEL_PROBE_TIMEOUT");
-            if (last.payload.status === "succeeded") fail(502, job.tool ? "MODEL_PROBE_STREAM_FAILED" : "MODEL_PROBE_TOOL_FAILED");
-            fail(502, "MODEL_PROBE_FAILED");
-          }
-          break;
+        if (terminal) {
+          const result = terminal.payload.result as { error?: string } | undefined;
+          if (result?.error === "TASK_TIMEOUT") fail(504, "MODEL_PROBE_TIMEOUT");
+          if (terminal.payload.status === "succeeded") fail(502, job.tool ? "MODEL_PROBE_STREAM_FAILED" : "MODEL_PROBE_TOOL_FAILED");
+          fail(502, "MODEL_PROBE_FAILED");
         }
         if (Date.now() >= deadline) fail(504, "MODEL_PROBE_TIMEOUT");
         await delay(350);
