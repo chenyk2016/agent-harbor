@@ -218,7 +218,7 @@ A 的通过只说明接口切分保持 Docker 行为。B 通过才允许切少�
 
 阶段 B 的探针在单独的 Ubuntu 24.04 环境运行独立 Docker 引擎。两个后端运行同一固定镜像和同一个 PostgreSQL 测试库。Caddy 使用一个固定入口，先撤掉旧路由，确认旧进程停止，再建立并核对下一份部署。探针分别验证授权访问、业务读写、静态资源、WebSocket、管理进程强杀以及从另一张网络绕过入口的尝试。应用的嵌入策略通过响应头核对。
 
-单租户 OpenSandbox 1.2.0 的管理密钥保护生命周期接口。内部数据转发路由允许无密钥访问，因此管理服务和自动发布的端口都必须绑定到受信控制主机的回环地址。Caddy 负责对每次浏览和 WebSocket 握手验权，且应用进程不能收到登录 Cookie 或管理密钥。[OpenSandbox 1.2.0 认证中间件](https://github.com/opensandbox-group/OpenSandbox/blob/release-1.2.0/server/src/opensandbox_server/middleware/auth.py)
+单租户 OpenSandbox 1.2.0 的管理密钥保护生命周期接口。内部数据转发路由允许无密钥访问，因此管理服务和自动发布的端口都必须绑定到受信控制主机的回环地址。Caddy 负责对每次浏览和 WebSocket 握手验权，且应用进程不能收到登录 Cookie 或管理密钥。[OpenSandbox 1.2.0 认证中间件](https://github.com/opensandbox-group/OpenSandbox/blob/release-1.2.0/server/opensandbox_server/middleware/auth.py)
 
 | 当前代码 | 已接入的入口 |
 | --- | --- |
@@ -226,7 +226,7 @@ A 的通过只说明接口切分保持 Docker 行为。B 通过才允许切少�
 | [Docker 预览适配器](../../src/docker/preview-provider.ts) 与 [OpenSandbox 预览适配器](../../src/opensandbox/preview-provider.ts) | 隔离验收入口，使用统一环境引用和私有上游接口 |
 | [私有预览探针](../../tests/private-preview-verification.mjs) | 同一路由 Docker → OpenSandbox → Docker，显式选择后端 |
 
-在一次性 Linux 环境构建项目，并只在该副本安装固定的 `@alibaba-group/opensandbox@1.2.0`。准备 OpenSandbox Server 1.2.0、execd v1.1.0 和探针使用的 Node、PostgreSQL、Caddy 镜像，再运行：
+在一次性 Linux 环境构建项目，并只在该副本安装固定的 `@alibaba-group/opensandbox@1.2.0`。准备 OpenSandbox Server 1.2.0、execd v1.1.0 和探针使用的 Node、PostgreSQL、Caddy 镜像，使用以下命令复跑。
 
 ```sh
 AH_PRIVATE_PREVIEW_DISPOSABLE=1 \
