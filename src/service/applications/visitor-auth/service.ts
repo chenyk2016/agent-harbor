@@ -251,7 +251,10 @@ export class VisitorAuthService {
       row.environment,
       new URL(row.origin).host,
     );
-    return { ...row, providers: active.providers };
+    const studio = this.options.workbenchOrigin;
+    const workbenchReturnOrigin = studio && row.environment === "preview" &&
+      row.return_path === `${studio}/applications/${row.app_id}` ? studio : undefined;
+    return { ...row, providers: active.providers, workbenchReturnOrigin };
   }
 
   /** 注册完成后走同一条一次性交接链路，密码和 PocketBase 凭据留在服务端。 */

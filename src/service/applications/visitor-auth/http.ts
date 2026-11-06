@@ -91,7 +91,7 @@ const visitorCsp =
 function signInPage(
   response: Response,
   flow: string,
-  context: { origin: string; providers: readonly VisitorProvider[] },
+  context: { origin: string; providers: readonly VisitorProvider[]; workbenchReturnOrigin?: string },
   mode: "password" | "register",
   message = "",
   status = 200,
@@ -107,6 +107,7 @@ function signInPage(
   const destinations = [
     passwordEnabled && new URL(context.origin).origin,
     googleEnabled && "https://accounts.google.com",
+    context.workbenchReturnOrigin,
   ].filter(Boolean);
   response
     .status(status)

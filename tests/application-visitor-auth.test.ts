@@ -596,6 +596,8 @@ test("visitor callbacks and sessions are bound to an app, environment, browser a
     })).status, 404);
     const password = await begin(preview, "?workbench=1&return=https%3A%2F%2Fbad.example.net");
     assert.match(password.html, /name="password"/);
+    assert.equal(password.formAction, `form-action 'self' ${preview.origin} ${studio}`);
+    assert.ok(!password.formAction.includes("bad.example.net"));
     assert.doesNotMatch(password.html, /使用 Google 登录/);
     assert.equal(
       (await credential("google", password.flow, password.authCookie)).status,
