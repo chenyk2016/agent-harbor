@@ -104,7 +104,7 @@ export class ApplicationAnalysis {
           await store.db.execute(sql`UPDATE wallet_requests SET "messageId"=${message.id}
             WHERE id=${requestId} AND "sessionId"=${id} AND ("messageId" IS NULL OR "messageId"=${message.id})`);
         },
-      });
+      }, controller.resident);
     } finally {
       await unlock();
     }

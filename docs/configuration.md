@@ -44,7 +44,9 @@
 
 ## 常驻 Runner 后端
 
-默认使用 `AH_RESIDENT_BACKEND=docker`。单机 Linux 可以为普通对话配置 `opensandbox`，同时填写 `AH_OPENSANDBOX_RUNNER_ORIGIN` 和 `AH_OPENSANDBOX_RUNNER_KEY`，指向同主机上带 Harbor 只读根规则的专用管理服务。内置离线文本 MCP 随普通对话使用 OpenSandbox。带专家、个人技能、远程 MCP、自定义本地模板或脚本的会话仍由 Docker 执行。私有应用预览有自己的配置。
+默认使用 `AH_RESIDENT_BACKEND=docker`。在单机 Linux 上设为 `opensandbox`，并填写 `AH_OPENSANDBOX_RUNNER_ORIGIN` 和 `AH_OPENSANDBOX_RUNNER_KEY`，对话、专家、Skills、各类 MCP、设置页 MCP 测试、只读问数、Skill 依赖安装、应用构建和本地 CLI 执行均使用同主机的专用管理服务。CLI 也需要以能访问同一数据根和 Unix socket 的 Linux UID 1000 运行。
+
+同时设置 `AH_APP_RUNTIME_BACKEND=opensandbox`，应用预览和正式运行也由 OpenSandbox 管理。默认沿用 Runner 的地址和密钥。专用管理服务须开启应用配置目录，并使用本机 Docker 引擎。参见[管理服务部署和应用回切](../infra/opensandbox/README.md)。
 
 在隔离实例先验证。切换时停止 Harbor，保留数据根、PostgreSQL 和镜像，改后端再启动。服务会先按归属清理旧执行环境，确认停止后接单。未结束消息留在历史，用户可显式提交新一轮。确认切回时可移除 OpenSandbox Runner 配置。启动遇到未确认的创建请求时保留待核对状态，参见[部署和故障边界](../infra/opensandbox/README.md)。
 

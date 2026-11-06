@@ -1,5 +1,5 @@
 import { PreviewAccess } from "./preview-access.js";
-import { OpenSandboxPreviewProvider } from "../../opensandbox/preview-provider.js";
+import { OpenSandboxPreviewProvider, pilotApplicationBackend, strictApplicationBackend } from "../../opensandbox/preview-provider.js";
 import { applicationPreviewClient } from "../../opensandbox/client.js";
 import { stopAndRemove } from "../../runtime/providers/contracts.js";
 import { verifyPreview } from "../../runtime/providers/preview.js";
@@ -54,7 +54,7 @@ export interface ApplicationOptions {
   downloadProxy?: string;
   observation?: ObservationOptions;
   visitorAuth?: VisitorAuthOptions;
-  openSandboxPreview?: { appIds: Set<string>; origin?: URL; apiKey?: string };
+  openSandboxPreview?: { appIds: Set<string>; origin?: URL; apiKey?: string; all?: boolean };
 }
 /** 给模型的应用开发约定：限定修改位置、数据声明和平台接口。实际权限与数据校验仍由运行器及服务端执行。 */
 const instructions = `你是应用创建助理。当前工作区是平台标准React/TypeScript应用模板。
@@ -155,13 +155,16 @@ export class ApplicationService {
       options.nodeBase,
       resolve("infra/app-runtime"),
       options.downloadProxy,
+      controller.resident.backendId === "opensandbox-strict-runner"
+        ? { root: controller.store.root, provider: controller.resident } : undefined,
     );
     this.driver = this.builder.driver;
     const openSandbox = options.openSandboxPreview;
     if (openSandbox?.origin && openSandbox.apiKey) {
-      this.openSandboxClient = applicationPreviewClient(openSandbox.origin, openSandbox.apiKey);
+      this.openSandboxClient = applicationPreviewClient(openSandbox.origin, openSandbox.apiKey,
+        openSandbox.all ? controller.backend.owner : undefined);
       this.openSandbox = new OpenSandboxPreviewProvider(this.openSandboxClient, this.driver,
-        join(options.root, "opensandbox-preview"), openSandbox.origin);
+        join(options.root, "opensandbox-preview"), openSandbox.origin, openSandbox.all ? openSandbox.apiKey : undefined);
     }
     this.data = new ApplicationData(options.root, options.dataAdminUrl);
     sessions.onUserClose = (userId) => this.suspendUser(userId);
@@ -665,15 +668,16 @@ export class ApplicationService {
     const current = currentEndpoint.appliedDeploymentId
       ? await this.store.deployment(currentEndpoint.appliedDeploymentId) : undefined;
     const previous = current?.spec?.visitorAuth;
-    const selected = artifact.target === "preview" && this.options.openSandboxPreview?.appIds.has(operation.appId);
-    const backend = selected ? "opensandbox-preview" : "docker";
+    const all = this.options.openSandboxPreview?.all;
+    const selected = all || (artifact.target === "preview" && this.options.openSandboxPreview?.appIds.has(operation.appId));
+    const backend = all ? strictApplicationBackend : selected ? pilotApplicationBackend : "docker";
     if (selected && !this.openSandbox) fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
-    if (selected && (await this.store.deployments()).some(deployment =>
-      deployment.appId !== operation.appId && deployment.runtimeBackend === "opensandbox-preview" &&
+    if (selected && !all && (await this.store.deployments()).some(deployment =>
+      deployment.appId !== operation.appId && deployment.runtimeBackend === pilotApplicationBackend &&
       (deployment.observedState !== "stopped" || deployment.desiredState !== "stopped")))
       fail(409, "APPLICATION_OPENSANDBOX_PILOT_OCCUPIED");
     if (current && current.runtimeBackend !== backend) fail(409, "APPLICATION_PREVIEW_PAUSE_REQUIRED");
-    const ownerOnly = artifact.target === "preview" && (selected || (await this.store.deployments(operation.appId))
+    const ownerOnly = artifact.target === "preview" && ((selected && !all) || (await this.store.deployments(operation.appId))
       .some(deployment => deployment.spec?.ownerOnly));
     const protections = await this.store.authProtection(operation.appId);
     const stored = protections.find(policy => policy.environment === artifact.target);
@@ -746,7 +750,7 @@ export class ApplicationService {
       if (selected) {
         const runtime = await this.openSandbox!.create({ build: artifact, deploymentId: id, databaseUrl, observation, visitorAuth });
         deployment = { id, appId: artifact.appId, build: artifact, environment: artifact.target,
-          hostPort: Number(this.options.openSandboxPreview!.origin!.port), container: "", runtime, visitorAuth, ownerOnly: true };
+          hostPort: Number(this.options.openSandboxPreview!.origin!.port), container: "", runtime, visitorAuth, ...(ownerOnly ? { ownerOnly: true } : {}) };
       } else {
         deployment = await this.driver.create(artifact, id, databaseUrl, observation, visitorAuth);
         if (ownerOnly) deployment.ownerOnly = true;
@@ -782,15 +786,17 @@ export class ApplicationService {
         throw new Error("APPLICATION_RESOURCE_OWNERSHIP_MISMATCH");
       return this.driver.destroy(name);
     }
-    if (deployment.runtimeBackend !== "opensandbox-preview" || !this.openSandbox)
-      fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
     if (deployment.observedState === "stopped" && deployment.desiredState === "stopped") return;
+    if (!this.openSandbox || deployment.runtimeBackend !== this.openSandbox.backendId)
+      fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
     const found = await this.openSandbox.findOwned(deployment.id);
     const recorded = deployment.spec?.runtime;
     if (!recorded && !found.length) fail(503, "APPLICATION_OPENSANDBOX_CREATE_UNCONFIRMED");
-    if (recorded && !found.some(ref => ref.resourceId === recorded.resourceId) &&
-        await this.openSandbox.inspect(recorded) !== "absent")
-      fail(503, "APPLICATION_RESOURCE_OWNERSHIP_MISMATCH");
+    if (recorded && !found.some(ref => ref.resourceId === recorded.resourceId)) {
+      if (await this.openSandbox.inspect(recorded) !== "absent")
+        fail(503, "APPLICATION_RESOURCE_OWNERSHIP_MISMATCH");
+      await this.openSandbox.remove(recorded);
+    }
     for (const ref of found) await stopAndRemove(this.openSandbox, ref);
     if ((await this.openSandbox.findOwned(deployment.id)).length)
       fail(503, "APPLICATION_OPENSANDBOX_STOP_UNCONFIRMED");
@@ -1039,10 +1045,14 @@ export class ApplicationService {
           expectedGeneration
         )
           fail(409, "APPLICATION_ENDPOINT_CHANGED");
+        // Older Docker artifacts predate the private runtime request check.
+        const artifact = this.options.openSandboxPreview?.all && old.runtimeBackend !== strictApplicationBackend
+          ? await this.build(result.operation, revision, "production")
+          : build.artifact!;
         const next = await this.prepareDeployment(
           result.operation,
           revision,
-          build.artifact!,
+          artifact,
           expectedGeneration + 1,
         );
         await this.switchEndpoint(
@@ -1319,8 +1329,9 @@ export class ApplicationService {
         if (target.appId !== endpoint.appId || target.environment !== environment ||
             target.spec.appId !== endpoint.appId || target.spec.environment !== environment)
           fail(503, "APPLICATION_DEPLOYMENT_UNCONFIRMED");
-        if (target.runtimeBackend === "opensandbox-preview") {
-          if (!this.openSandbox || !target.spec.runtime) fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
+        if (target.runtimeBackend === pilotApplicationBackend || target.runtimeBackend === strictApplicationBackend) {
+          if (!this.openSandbox || target.runtimeBackend !== this.openSandbox.backendId || !target.spec.runtime)
+            fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
           const upstream = await this.openSandbox.resolvePrivateEndpoint(target.spec.runtime);
           spec = { ...target.spec, hostPort: Number(upstream.url.port) };
         } else {

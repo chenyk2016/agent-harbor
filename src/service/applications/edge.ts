@@ -1,5 +1,7 @@
 /** 只修改预先登记的应用路由子树；固定来源配置由安装者提供，不接受用户指定代理目标。 */
 import type { AppDeployment } from "./docker.js";
+import { applicationRuntimeAccess, applicationRuntimeHeader } from "../../runtime/providers/preview.js";
+import { pilotApplicationBackend, strictApplicationBackend } from "../../opensandbox/preview-provider.js";
 import { requireAppId } from "./source-store.js";
 import { request as httpRequest } from "node:http";
 import { visitorOrigin, visitorPath, type VisitorAuthOptions } from "./visitor-auth/config.js";
@@ -77,6 +79,7 @@ export function applicationRoutes(
   visitor?: VisitorEdgeOptions,
   publicOrigin?: string,
   openSandboxPort?: number,
+  openSandboxAccessKey?: string,
 ) {
   if (!["127.0.0.1", "host.docker.internal"].includes(upstreamHost))
     throw new Error("INVALID_EDGE_UPSTREAM_HOST");
@@ -107,20 +110,28 @@ export function applicationRoutes(
     const runtime = deployment.runtime;
     if (runtime) {
       requireAppId(runtime.resourceId);
-      if (runtime.backendId !== "opensandbox-preview" || deployment.hostPort !== openSandboxPort ||
-          upstreamHost !== "127.0.0.1" || !deployment.ownerOnly)
+      const allowed = runtime.backendId === strictApplicationBackend
+        ? !!openSandboxAccessKey
+        : runtime.backendId === pilotApplicationBackend && upstreamHost === "127.0.0.1" && deployment.ownerOnly;
+      if (!allowed || deployment.hostPort !== openSandboxPort)
         throw new Error("INVALID_OPENSANDBOX_UPSTREAM");
     }
     if (deployment.ownerOnly && (!protectedApp?.previewParentOrigin || deployment.environment !== "preview" || !visitor))
       throw new Error("APPLICATION_PREVIEW_AUTH_UNAVAILABLE");
+    const runtimeAccess = runtime?.backendId === strictApplicationBackend && openSandboxAccessKey
+      ? { [applicationRuntimeHeader]: [applicationRuntimeAccess(openSandboxAccessKey, deployment.id)] } : undefined;
     const proxy = {
       handler: "reverse_proxy",
       upstreams: [{ dial: `${upstreamHost}:${deployment.hostPort}` }],
       ...(runtime ? { rewrite: { uri: `/v1/sandboxes/${runtime.resourceId}/proxy/3000{http.request.uri}` } } : {}),
       headers: {
-        request: { delete: ["Cookie", "Authorization", "X-Harbor-*", "Open-Sandbox-Api-Key", "X-Execd-Access-Token",
-          ...(!protectedApp ? ["X-App-Visitor-Assertion"] : [])] },
-        response: { delete: ["Set-Cookie", "Service-Worker-Allowed", "X-App-Visitor-Assertion"] },
+        request: {
+          delete: ["Cookie", "Authorization", "X-Harbor-*", "Open-Sandbox-Api-Key", "X-Execd-Access-Token",
+            ...(!protectedApp ? ["X-App-Visitor-Assertion"] : []),
+            ...(!runtimeAccess ? [applicationRuntimeHeader] : [])],
+          ...(runtimeAccess ? { set: runtimeAccess } : {}),
+        },
+        response: { delete: ["Set-Cookie", "Service-Worker-Allowed", "X-App-Visitor-Assertion", applicationRuntimeHeader] },
       },
     };
     const forward = [
@@ -164,6 +175,7 @@ export class CaddyApplicationEdge {
     readonly routeId = "harbor-application-routes",
     readonly visitor?: VisitorEdgeOptions,
     readonly openSandboxPort?: number,
+    readonly openSandboxAccessKey?: string,
   ) {
     if (adminOrigin.startsWith("unix:/"))
       this.socketPath = adminOrigin.slice(5);
@@ -266,12 +278,12 @@ export class CaddyApplicationEdge {
   async matches(deployments: AppDeployment[]) {
     return (
       canonical((await this.actual()).routes) ===
-      canonical(applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort))
+      canonical(applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort, this.openSandboxAccessKey))
     );
   }
   /** 用给定部署集合替换整棵应用路由子树并核对这些实例；单应用变更应使用 replaceEndpoint。 */
   async replace(deployments: AppDeployment[]) {
-    return this.update(() => applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort), deployments);
+    return this.update(() => applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort, this.openSandboxAccessKey), deployments);
   }
   /** CAS仍保护共享子树，但只替换一个端点；其他应用的未知/失效路由保持原样，不参与本次健康确认。 */
   async replaceEndpoint(appId: string, environment: "preview" | "production", deployment: AppDeployment | null) {
@@ -280,7 +292,7 @@ export class CaddyApplicationEdge {
         (deployment && (deployment.appId !== appId || deployment.environment !== environment)))
       throw new Error("INVALID_EDGE_DEPLOYMENT");
     const base = `/${environment === "preview" ? "preview" : "apps"}/${appId}/`;
-    const replacement = applicationRoutes(deployment ? [deployment] : [], this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort);
+    const replacement = applicationRoutes(deployment ? [deployment] : [], this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort, this.openSandboxAccessKey);
     return this.update(routes => [
       ...routes.filter(route => {
         const paths = (route as { match?: { path?: string[] }[] })?.match;

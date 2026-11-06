@@ -1,10 +1,11 @@
 /** Authenticated configuration API only; Claude Code connects directly to the selected servers. */
 import { Router } from "express";
 import type { McpService } from "./service.js";
+import type { ResidentProvider } from "../../runtime/providers/resident.js";
 import { probeMcp } from "./probe.js";
 import { jsonBody, jsonInput, parameter, principal } from "../http/shared.js";
 
-export function createMcpRouter(service: McpService) {
+export function createMcpRouter(service: McpService, resident?: ResidentProvider) {
   const router = Router({ caseSensitive: true });
   router.get("/mcp-templates", (_request, response) => {
     // 模板只公开可选项和凭据字段名，不接受用户指定宿主命令、镜像或挂载。
@@ -52,6 +53,7 @@ export function createMcpRouter(service: McpService) {
           service,
           principal(response).userId,
           parameter(request, "connectionId"),
+          resident,
         ),
       );
     },

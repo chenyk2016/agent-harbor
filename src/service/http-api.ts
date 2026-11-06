@@ -36,7 +36,7 @@ import { adminGuard, adminAuditMiddleware, adminJson, createAdminRouter } from "
 
 export function createApi(
   manager: SessionManager,
-  controller: Pick<Controller, "store">,
+  controller: Pick<Controller, "store"> & Partial<Pick<Controller, "resident">>,
   files = new WorkspaceFiles(controller.store.root),
   identityOptions: IdentityOptions = {},
   skillModule?: SkillModule,
@@ -182,7 +182,7 @@ export function createApi(
       response.json({ enabled: false, canCreate: false, reason: applicationsUnavailable }),
     );
   }
-  if (mcp) api.use(createMcpRouter(mcp));
+  if (mcp) api.use(createMcpRouter(mcp, controller.resident));
   if (skillModule) api.use(createSkillRouter(skillModule));
   if (experts)
     api.use(

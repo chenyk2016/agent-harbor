@@ -8,6 +8,7 @@ import { Controller } from "../runtime/controller.js";
 import { lockSession } from "../runtime/storage.js";
 import { ExpertService } from "./experts/service.js";
 import { SkillService } from "./skills/service.js";
+import { SkillBuilder } from "../docker/skill-builder.js";
 import { SkillBuildManager } from "./skills/build-manager.js";
 import { ServiceStore } from "./service-store.js";
 import { SessionManager } from "./session-manager.js";
@@ -132,7 +133,7 @@ try {
   if (!(await files.initialize()))
     console.error("Workspace file access unavailable");
   const library = new SkillService(database.db, root);
-  const builds = new SkillBuildManager(library);
+  const builds = new SkillBuildManager(library, new SkillBuilder(root, undefined, resident ? controller.resident : undefined));
   await builds.initialize();
   await new ExpertService(library, builds).initialize();
   const templates = await loadLocalTemplates(process.env.AH_MCP_TEMPLATES_FILE);

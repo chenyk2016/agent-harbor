@@ -14,6 +14,8 @@ import {
 import { createReadStream } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fetch, ProxyAgent } from "undici";
+import type { ResidentProvider } from "../runtime/providers/resident.js";
+import { runBuildJob, stopBuildJobs } from "../runtime/providers/build-job.js";
 import { DockerBackend } from "./docker.js";
 import type { SkillManifest } from "../service/skills/manifest.js";
 import type { SourceFile } from "../service/skills/package-store.js";
@@ -30,6 +32,7 @@ export class SkillBuilder {
   constructor(
     readonly root: string,
     readonly image = process.env.AH_SKILL_IMAGE ?? "agent-harbor:0.5.5",
+    private readonly resident?: ResidentProvider,
   ) {
     this.backend = new DockerBackend(root);
   }
@@ -37,6 +40,8 @@ export class SkillBuilder {
     return this.backend.imageId(this.image);
   }
   async stop(name: string) {
+    const id = /^ah-skill-([a-f0-9-]{36})-\d+$/.exec(name)?.[1];
+    if (this.resident && id) await stopBuildJobs(this.resident, id);
     await this.backend.stop(name);
     await this.backend.destroy(name);
   }
@@ -224,73 +229,82 @@ export class SkillBuilder {
         "npm ci --offline --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache",
       );
     await mkdir(input.output, { recursive: true });
-    await this.backend.command([
-      "create",
-      "--name",
-      input.name,
-      "--label",
-      "io.agent-harbor.project=agent-harbor",
-      "--label",
-      `harbor.owner=${this.backend.owner}`,
-      "--label",
-      "harbor.purpose=skill-build",
-      "--user",
-      "1000:1000",
-      "--read-only",
-      "--cap-drop",
-      "ALL",
-      "--security-opt",
-      "no-new-privileges",
-      "--network",
-      "none",
-      "--cpus",
-      "2",
-      "--memory",
-      "2g",
-      "--pids-limit",
-      "128",
-      "--tmpfs",
-      "/tmp:rw,nosuid,size=512m,mode=1777",
-      "--mount",
-      `type=bind,src=${input.source},dst=/source,readonly`,
-      "--mount",
-      `type=bind,src=${input.materials},dst=/downloads,readonly`,
-      "--mount",
-      `type=bind,src=${input.output},dst=/artifact`,
-      "--env",
-      "HOME=/tmp",
-      "--env",
-      "PIP_DISABLE_PIP_VERSION_CHECK=1",
-      "--entrypoint",
-      "sh",
-      input.imageId,
-      "-c",
-      commands.join("\n"),
-    ]);
-    let writes = Promise.resolve();
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn("docker", ["start", "--attach", input.name], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      const abort = () => {
-        child.kill();
-        reject(new Error("Build cancelled"));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      for (const stream of [child.stdout, child.stderr])
-        stream.on("data", (chunk) => {
-          writes = writes.then(() => log(String(chunk).slice(0, 16_000)));
+    if (this.resident?.backendId === "opensandbox-strict-runner") {
+      const id = /^ah-skill-([a-f0-9-]{36})-\d+$/.exec(input.name)?.[1];
+      if (!id) throw new Error("Invalid skill build name");
+      await runBuildJob(this.resident, this.root, {
+        id, image: input.imageId, input: input.source, output: input.output,
+        work: { type: "skill-build", materials: input.materials, script: commands.join("\n") },
+      }, signal, log);
+    } else {
+      await this.backend.command([
+        "create",
+        "--name",
+        input.name,
+        "--label",
+        "io.agent-harbor.project=agent-harbor",
+        "--label",
+        `harbor.owner=${this.backend.owner}`,
+        "--label",
+        "harbor.purpose=skill-build",
+        "--user",
+        "1000:1000",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--network",
+        "none",
+        "--cpus",
+        "2",
+        "--memory",
+        "2g",
+        "--pids-limit",
+        "128",
+        "--tmpfs",
+        "/tmp:rw,nosuid,size=512m,mode=1777",
+        "--mount",
+        `type=bind,src=${input.source},dst=/source,readonly`,
+        "--mount",
+        `type=bind,src=${input.materials},dst=/downloads,readonly`,
+        "--mount",
+        `type=bind,src=${input.output},dst=/artifact`,
+        "--env",
+        "HOME=/tmp",
+        "--env",
+        "PIP_DISABLE_PIP_VERSION_CHECK=1",
+        "--entrypoint",
+        "sh",
+        input.imageId,
+        "-c",
+        commands.join("\n"),
+      ]);
+      let writes = Promise.resolve();
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn("docker", ["start", "--attach", input.name], {
+          stdio: ["ignore", "pipe", "pipe"],
         });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        signal.removeEventListener("abort", abort);
-        code === 0
-          ? resolve()
-          : reject(new Error(`Offline preparation exited ${code}`));
+        const abort = () => {
+          child.kill();
+          reject(new Error("Build cancelled"));
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        for (const stream of [child.stdout, child.stderr])
+          stream.on("data", (chunk) => {
+            writes = writes.then(() => log(String(chunk).slice(0, 16_000)));
+          });
+        child.on("error", reject);
+        child.on("close", (code) => {
+          signal.removeEventListener("abort", abort);
+          code === 0
+            ? resolve()
+            : reject(new Error(`Offline preparation exited ${code}`));
+        });
+        if (signal.aborted) abort();
       });
-      if (signal.aborted) abort();
-    });
-    await writes;
+      await writes;
+    }
     const prefix = `/opt/harbor-skills/${input.namespace}/skills/${manifest.name}`;
     const instructions: string[] = [];
     for (const entry of manifest.harbor?.entrypoints ?? []) {

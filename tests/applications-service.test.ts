@@ -883,8 +883,9 @@ test("new generated applications stay public when no managed login is configured
   }
 });
 
-test("opt-in preview records provider, gates owner access and requires stop before rollback", async () => {
+test("OpenSandbox preserves preview owner access and requires a stop before switching application backends", async () => {
   const f = await fixture("email");
+  let backendId = "opensandbox-preview";
   const resources = new Map<string, { buildId: string; deploymentId: string }>();
   const probe = createServer((request, response) => {
     const id = request.url?.split("/")[1];
@@ -907,15 +908,16 @@ test("opt-in preview records provider, gates owner access and requires stop befo
     const appIds = new Set([appId]);
     f.service.options.openSandboxPreview = { origin: new URL(`http://127.0.0.1:${port}`), appIds };
     Object.assign(f.service, { openSandbox: {
+      get backendId() { return backendId; },
       async create(launch: import("../src/runtime/providers/preview.js").PreviewLaunch) {
         const resourceId = randomUUID();
-        assert.equal((await f.store.deployment(launch.deploymentId))?.runtimeBackend, "opensandbox-preview");
+        assert.equal((await f.store.deployment(launch.deploymentId))?.runtimeBackend, backendId);
         resources.set(resourceId, { buildId: launch.build.id, deploymentId: launch.deploymentId });
-        return { backendId: "opensandbox-preview", resourceId };
+        return { backendId, resourceId };
       },
       async findOwned(id: string) {
         return [...resources].filter(([, item]) => item.deploymentId === id)
-          .map(([resourceId]) => ({ backendId: "opensandbox-preview", resourceId }));
+          .map(([resourceId]) => ({ backendId, resourceId }));
       },
       async resolvePrivateEndpoint(ref: { resourceId: string }) { return { url: new URL(`http://127.0.0.1:${port}/${ref.resourceId}`) }; },
       async stopAndConfirm(ref: { resourceId: string }) { resources.delete(ref.resourceId); },
@@ -965,6 +967,38 @@ test("opt-in preview records provider, gates owner access and requires stop befo
     const reverted = (await f.store.endpoint(appId, "preview")).appliedDeploymentId!;
     assert.equal((await f.store.deployment(reverted))?.runtimeBackend, "docker");
     assert.equal((await f.store.deployment(reverted))?.spec?.ownerOnly, true);
+
+    const publish = async () => {
+      const operation = await f.service.deploy("a", appId, revision.id, "production", randomUUID());
+      return f.done(appId, operation.operation.id);
+    };
+    assert.equal((await publish()).state, "succeeded");
+    const dockerProduction = await f.store.endpoint(appId, "production");
+    backendId = "opensandbox-app";
+    f.service.options.openSandboxPreview.all = true;
+    assert.equal((await publish()).error, "APPLICATION_PREVIEW_PAUSE_REQUIRED");
+    const stopped = await f.service.unpublish("a", appId, randomUUID(), dockerProduction.generation);
+    assert.equal((await f.done(appId, stopped.operation.id)).state, "succeeded");
+    assert.equal((await publish()).state, "succeeded");
+    let sandboxProduction = await f.store.endpoint(appId, "production");
+    const production = await f.store.deployment(sandboxProduction.appliedDeploymentId!);
+    assert.equal(production?.runtimeBackend, "opensandbox-app");
+    assert.equal(production?.spec?.ownerOnly, undefined);
+    const oldBuild = await f.store.deployment(dockerProduction.appliedDeploymentId!);
+    const rollback = await f.service.rollback("a", appId, oldBuild!.id, randomUUID(), sandboxProduction.generation);
+    assert.equal((await f.done(appId, rollback.operation.id)).state, "succeeded");
+    sandboxProduction = await f.store.endpoint(appId, "production");
+    const restored = await f.store.deployment(sandboxProduction.appliedDeploymentId!);
+    assert.equal(restored?.runtimeBackend, "opensandbox-app");
+    assert.notEqual(restored?.buildId, oldBuild?.buildId);
+    assert.equal(resources.size, 1);
+    const sandboxStop = await f.service.unpublish("a", appId, randomUUID(), sandboxProduction.generation);
+    assert.equal((await f.done(appId, sandboxStop.operation.id)).state, "succeeded");
+    assert.equal(resources.size, 0);
+    f.service.options.openSandboxPreview.all = false;
+    assert.equal((await publish()).state, "succeeded");
+    const dockerRestored = await f.store.endpoint(appId, "production");
+    assert.equal((await f.store.deployment(dockerRestored.appliedDeploymentId!))?.runtimeBackend, "docker");
   } finally {
     probe.closeAllConnections();
     await new Promise<void>(resolve => probe.close(() => resolve()));

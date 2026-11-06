@@ -51,26 +51,31 @@ export async function applicationOptions(
     return;
   }
   let openSandboxPreview: ApplicationOptions["openSandboxPreview"];
-  const address = process.env.AH_APP_OPENSANDBOX_ORIGIN?.trim();
-  const apiKey = process.env.AH_APP_OPENSANDBOX_API_KEY?.trim();
+  const backend = process.env.AH_APP_RUNTIME_BACKEND;
+  if (backend && backend !== "docker" && backend !== "opensandbox") {
+    report("applications", "Invalid AH_APP_RUNTIME_BACKEND");
+    return;
+  }
+  const all = backend === "opensandbox";
+  const address = (process.env.AH_APP_OPENSANDBOX_ORIGIN ?? (all ? process.env.AH_OPENSANDBOX_RUNNER_ORIGIN : undefined))?.trim();
+  const apiKey = (process.env.AH_APP_OPENSANDBOX_API_KEY ?? (all ? process.env.AH_OPENSANDBOX_RUNNER_KEY : undefined))?.trim();
   const appIds = new Set((process.env.AH_APP_OPENSANDBOX_PREVIEW_IDS ?? "").split(",").map(id => id.trim()).filter(Boolean));
-  if (address || apiKey || appIds.size) {
+  if (all || address || apiKey || appIds.size) {
     const origin = URL.parse(address ?? "");
     if (origin?.protocol === "http:" && origin.hostname === "127.0.0.1" && origin.port &&
-        origin.href === origin.origin + "/" && apiKey &&
-        visitorAuth?.workbenchOrigin && upstream === "127.0.0.1" &&
-        appIds.size <= 1 && [...appIds].every(id => appIdPattern.test(id))) {
-      openSandboxPreview = { origin, apiKey, appIds };
+        origin.href === origin.origin + "/" && apiKey && (!all || apiKey.length >= 32) &&
+        (all || (visitorAuth?.workbenchOrigin && upstream === "127.0.0.1" &&
+          appIds.size <= 1 && [...appIds].every(id => appIdPattern.test(id))))) {
+      openSandboxPreview = { origin, apiKey, appIds, ...(all ? { all } : {}) };
     } else {
-      // Preserve the explicit selection so an invalid setup fails closed on those apps.
-      openSandboxPreview = { appIds };
-      report("applications", "OpenSandbox preview requires a loopback origin, API key, same-site visitor authentication and at most one pilot app UUID");
+      openSandboxPreview = { appIds, ...(all ? { all } : {}) };
+      report("applications", "OpenSandbox application runtime requires a loopback origin and API key");
     }
   }
   let edge: CaddyApplicationEdge;
   try {
     edge = new CaddyApplicationEdge(caddyAdmin, publicOrigin, upstream, undefined, visitorAuth,
-      openSandboxPreview?.origin ? Number(openSandboxPreview.origin.port) : undefined);
+      openSandboxPreview?.origin ? Number(openSandboxPreview.origin.port) : undefined, all ? openSandboxPreview?.apiKey : undefined);
   } catch {
     report("applications", "Invalid AH_APP_CADDY_ADMIN");
     return;

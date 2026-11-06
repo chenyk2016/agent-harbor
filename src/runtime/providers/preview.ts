@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type { VisitorDeployment } from "../../service/applications/visitor-auth/config.js";
 import type { AppBuild } from "../../service/applications/docker.js";
 import type { EnvironmentRef, SandboxProvider } from "./contracts.js";
@@ -13,6 +14,12 @@ export interface PreviewLaunch {
 /** Server-side target. The proxy must never expose the upstream URL or credentials to clients. */
 export interface PrivateEndpoint {
   url: URL;
+  headers?: Record<string, string>;
+}
+
+export const applicationRuntimeHeader = "X-App-Runtime-Access";
+export function applicationRuntimeAccess(key: string, deploymentId: string) {
+  return createHmac("sha256", key).update("harbor-app-runtime-v1:" + deploymentId).digest("base64url");
 }
 
 export interface PreviewProvider extends SandboxProvider<PreviewLaunch> {
@@ -27,7 +34,7 @@ export async function verifyPreview(
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const response = await fetch(url, {
-      redirect: "error", signal: AbortSignal.timeout(1500),
+      headers: endpoint.headers, redirect: "error", signal: AbortSignal.timeout(1500),
     }).catch(() => undefined);
     if (response?.ok) {
       const identity = await response.json();

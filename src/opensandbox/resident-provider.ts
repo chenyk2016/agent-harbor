@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { DockerBackend } from "../docker/docker.js";
 import type { EnvironmentRef } from "../runtime/providers/contracts.js";
 import type { ResidentLaunch, ResidentProvider } from "../runtime/providers/resident.js";
-import { prepareRunnerMounts } from "../docker/runner-mounts.js";
+import { prepareRunnerMounts, prepareRunnerPlugins } from "../docker/runner-mounts.js";
 import { openRunnerSocket } from "./runner-transport.js";
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -52,10 +52,12 @@ export class OpenSandboxResidentProvider implements ResidentProvider {
     await response.body?.cancel();
   }
 
-  private async managerEpoch(): Promise<string> {
+  private async managerEpoch(required: string[] = []): Promise<string> {
     const profile = await this.api(`/harbor-runner/v1/${this.docker.owner}`, "GET");
     if (profile?.profile !== "strict-v1" || !uuid.test(profile.epoch))
       throw new Error("OpenSandbox strict Runner profile unconfirmed");
+    if (required.some(feature => !Array.isArray(profile.features) || !profile.features.includes(feature)))
+      throw new Error("OpenSandbox strict Runner profile does not support this workload");
     return profile.epoch;
   }
 
@@ -133,30 +135,46 @@ export class OpenSandboxResidentProvider implements ResidentProvider {
 
   resolveImage(image: string) { return this.docker.imageId(image); }
 
-  async create({ task, profile, directory, attemptDirectory, leaseId }: ResidentLaunch) {
+  async create({ task, profile, directory, attemptDirectory, leaseId, job }: ResidentLaunch) {
     const ref = this.plannedRef(task.attemptId);
-    if (task.hasLocalMcp) await this.docker.requireNativeMcpImage(profile.image);
-    const epoch = await this.managerEpoch();
+    await this.docker.validateRunnerImage(task, profile.image);
+    const mode = job ?? (task.mcpProbe ? "mcp-probe" : undefined);
+    const epoch = await this.managerEpoch([
+      ...(task.capabilities || task.expert ? ["plugins"] : []),
+      ...(mode ? [mode] : []),
+    ]);
     const bridge = join(attemptDirectory, "bridge");
     await mkdir(bridge, { mode: 0o700 });
-    const { cacheDirectory, policyFile } = await prepareRunnerMounts(this.docker.root, task, directory, attemptDirectory);
-    const mounts = [
-      [join(directory, "workspace"), "/workspace", false],
-      [join(directory, "claude-state"), "/platform/state", false],
-      [join(directory, "attempts"), "/platform/run", true],
-      [join(directory, "dependency-env"), "/session-env", false],
-      [cacheDirectory, "/dependency-cache", false],
-      [bridge, "/platform/bridge", false],
-      [policyFile, "/etc/claude-code/managed-settings.json", true],
-    ] as const;
+    const bridgeMount = [bridge, "/platform/bridge", false] as const;
+    const attemptsMount = [join(directory, "attempts"), "/platform/run", true] as const;
+    const jobMounts = {
+      "app-analysis": [[join(attemptDirectory, "analysis"), "/platform/runtime/app-analysis", true]],
+      "skill-build": [
+        [join(attemptDirectory, "input"), "/source", true],
+        [join(attemptDirectory, "materials"), "/downloads", true],
+        [join(attemptDirectory, "output"), "/artifact", false],
+        [join(attemptDirectory, "build.sh"), `/platform/run/${task.attemptId}/build.sh`, true],
+      ],
+      "app-build": [
+        [join(attemptDirectory, "input"), "/input", true],
+        [join(attemptDirectory, "builder"), "/platform/app-builder", true],
+        [join(attemptDirectory, "output"), "/output", false],
+        [join(attemptDirectory, "build-env.json"), `/platform/run/${task.attemptId}/build-env.json`, true],
+      ],
+    } as const;
+    const leaseMount = [join(directory, "attempts", ".leases"), "/platform/run/.leases", true] as const;
+    const mounts = [job ? leaseMount : attemptsMount, bridgeMount, ...(job
+      ? jobMounts[job]
+      : await this.runnerMounts(task, directory, attemptDirectory))];
     await mkdir(this.intents, { recursive: true, mode: 0o700 });
     const file = join(this.intents, task.attemptId + ".json");
     const intent = { sessionId: task.sessionId, epoch };
     await writeFile(file, JSON.stringify(intent), { mode: 0o600, flag: "wx", flush: true });
     const response = await this.api("/v1/sandboxes", "POST", {
       image: { uri: profile.image },
-      entrypoint: ["node", "/opt/opensandbox/runner-bridge.cjs", task.attemptId, leaseId],
-      timeout: 3600,
+      entrypoint: ["node", "/opt/opensandbox/runner-bridge.cjs", task.attemptId, leaseId,
+        ...(mode ? [mode] : [])],
+      timeout: job === "skill-build" ? 720 : 3600,
       resourceLimits: { cpu: "2", memory: "4Gi" },
       metadata: { [ownerLabel]: this.docker.owner, [sessionLabel]: task.sessionId, [attemptLabel]: task.attemptId, "harbor.os.epoch": epoch },
       volumes: mounts.map(([path, mountPath, readOnly], index) => ({ name: "mount-" + index, host: { path }, mountPath, readOnly })),
@@ -180,6 +198,19 @@ export class OpenSandboxResidentProvider implements ResidentProvider {
       await sleep(75);
     }
     throw new Error("OpenSandbox Runner did not become ready");
+  }
+
+  private async runnerMounts(task: ResidentLaunch["task"], directory: string, attemptDirectory: string) {
+    const { cacheDirectory, policyFile } = await prepareRunnerMounts(this.docker.root, task, directory, attemptDirectory);
+    const plugins = await prepareRunnerPlugins(task, directory, attemptDirectory);
+    return [
+      [join(directory, "workspace"), "/workspace", false],
+      [join(directory, "claude-state"), "/platform/state", false],
+      [join(directory, "dependency-env"), "/session-env", false],
+      [cacheDirectory, "/dependency-cache", false],
+      [policyFile, "/etc/claude-code/managed-settings.json", true],
+      ...plugins.map(({ source, target }) => [source, target, true] as const),
+    ] as const;
   }
 
   stopOnCancel() { return true; }

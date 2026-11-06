@@ -36,7 +36,7 @@ CREATE_PARAMETERS = (
 )
 
 
-def install(assets: Path, seccomp: Path, network: str, workspace_root: Path, owner: str, epoch: str, lease_name: str) -> None:
+def install(assets: Path, seccomp: Path, network: str, workspace_root: Path, owner: str, epoch: str, lease_name: str, application_root: Path | None) -> None:
     if version("opensandbox-server") != "1.2.0" or not workspace_root.is_dir():
         raise RuntimeError("Expected OpenSandbox Server 1.2.0 and an isolated workspace root")
     if network in {"bridge", "host", "none"}:
@@ -54,13 +54,70 @@ def install(assets: Path, seccomp: Path, network: str, workspace_root: Path, own
     if tuple(signature(upstream).parameters) != CREATE_PARAMETERS:
         raise RuntimeError("OpenSandbox Docker creation contract changed")
 
+    def private_host(host):
+        bindings = host.get("port_bindings", {})
+        return (host.get("network_mode") == network and bindings and
+                all(isinstance(address, tuple) and address[0] == "127.0.0.1"
+                    for address in bindings.values()) and
+                not any(host.get(key) for key in ("cap_add", "privileged", "devices", "device_requests")))
+
+    def app_host(image, labels, host):
+        deployment = labels.get("harbor.preview.deployment", "")
+        if not application_root or not UUID.fullmatch(deployment):
+            raise RuntimeError("Invalid OpenSandbox application identity")
+        expected_owner = hashlib.sha256(str(application_root.parent).encode()).hexdigest()[:16]
+        source = application_root / f"{deployment}.json"
+        image_config = image.attrs["Config"]
+        if (labels.get("harbor.preview.owner") != expected_owner or
+                image_config["User"] != "node" or
+                (image_config.get("Labels") or {}).get("harbor.app.runtime-access") != "v1" or not private_host(host) or
+                host.get("binds") != [f"{source}:/run/harbor-app.json:ro"] or
+                not source.is_file() or source.resolve() != source or
+                not re.fullmatch(r"[a-zA-Z0-9_-]{43}", json.loads(source.read_bytes()).get("runtimeAccess", ""))):
+            raise RuntimeError("Unexpected OpenSandbox application profile")
+        host.update(
+            read_only=True, init=True, tmpfs={"/tmp": "rw,nosuid,noexec,size=32m"},
+            cap_drop=["ALL"], pids_limit=128, mem_limit=512 * 1024 ** 2, nano_cpus=1_000_000_000,
+            security_opt=["no-new-privileges"], restart_policy={"Name": "unless-stopped"},
+            extra_hosts={"host.docker.internal": "host-gateway"},
+            binds=[*host["binds"], f"{assets}:{RUNTIME}:ro"],
+        )
+        return host
+
     def create(service, sandbox_id, image_uri, bootstrap_command, labels,
                environment, host_config_kwargs, exposed_ports, platform,
                unconfine_system_paths=False):
-        if (len(bootstrap_command) != 4 or bootstrap_command[:2] != EXEC or
-                not all(UUID.fullmatch(value) for value in bootstrap_command[2:])):
+        if bootstrap_command == ["node", "/app/harbor-runtime.mjs"]:
+            if unconfine_system_paths or not re.fullmatch(r"sha256:[a-f0-9]{64}", image_uri):
+                raise RuntimeError("Strict server requires an exact local application image ID")
+            image = service.docker_client.images.get(image_uri)
+            host = app_host(image, labels, dict(host_config_kwargs))
+            if not UUID.fullmatch(sandbox_id):
+                raise RuntimeError("Invalid OpenSandbox application sandbox ID")
+            app_network = service.docker_client.networks.create(
+                f"harbor-os-app-{sandbox_id}", driver="bridge",
+                options={"com.docker.network.bridge.enable_icc": "false"},
+                labels={"harbor.os.app-network": sandbox_id, "harbor.os.app-network-owner": labels["harbor.preview.owner"]},
+            )
+            host["network_mode"] = app_network.name
+            env = ["EXECD_ENVS=/tmp/opensandbox.env"]
+            try:
+                return upstream(service, sandbox_id, image_uri, bootstrap_command,
+                                {**labels, "harbor.os.app-profile": "strict-v1"}, env, host,
+                                exposed_ports, platform, unconfine_system_paths=False)
+            except Exception:
+                try:
+                    app_network.remove()
+                except docker.errors.APIError:
+                    # An allocated container still owns this network until confirmed removal.
+                    pass
+                raise
+        if (bootstrap_command[:2] != EXEC or len(bootstrap_command) not in (4, 5) or
+                not all(UUID.fullmatch(value) for value in bootstrap_command[2:4]) or
+                (len(bootstrap_command) == 5 and bootstrap_command[4] not in ("mcp-probe", "app-analysis", "skill-build", "app-build"))):
             raise RuntimeError("Strict server accepts only the fixed Harbor Runner entrypoint")
         attempt = bootstrap_command[2]
+        mode = bootstrap_command[4] if len(bootstrap_command) == 5 else "resident"
         session = labels.get("harbor.os.session", "")
         if (labels.get("harbor.os.owner") != owner or labels.get("harbor.os.attempt") != attempt or
                 labels.get("harbor.os.epoch") != epoch or not SESSION.fullmatch(session)):
@@ -71,12 +128,7 @@ def install(assets: Path, seccomp: Path, network: str, workspace_root: Path, own
         if image.attrs["Config"]["User"] not in {"node", "1000", "1000:1000"}:
             raise RuntimeError("Strict Runner image must declare a non-root user")
         host = dict(host_config_kwargs)
-        bindings = host.get("port_bindings", {})
-        if (host.get("network_mode") != network or not bindings or
-                any(not isinstance(address, tuple) or address[0] != "127.0.0.1"
-                    for address in bindings.values()) or unconfine_system_paths or
-                host.get("cap_add") or host.get("privileged") or host.get("devices") or
-                host.get("device_requests")):
+        if not private_host(host) or unconfine_system_paths:
             raise RuntimeError("Strict Runner requires private loopback bindings and no additional privileges")
         directory = workspace_root / session
         attempt_directory = directory / "attempts" / attempt
@@ -88,18 +140,46 @@ def install(assets: Path, seccomp: Path, network: str, workspace_root: Path, own
             "/platform/bridge": (attempt_directory / "bridge", "rw"),
             "/etc/claude-code/managed-settings.json": (attempt_directory / "managed-settings.json", "ro"),
         }
+        job_mounts = {
+            "app-analysis": {"/platform/runtime/app-analysis": (attempt_directory / "analysis", "ro")},
+            "skill-build": {
+                "/source": (attempt_directory / "input", "ro"),
+                "/downloads": (attempt_directory / "materials", "ro"),
+                "/artifact": (attempt_directory / "output", "rw"),
+                f"/platform/run/{attempt}/build.sh": (attempt_directory / "build.sh", "ro"),
+            },
+            "app-build": {
+                "/input": (attempt_directory / "input", "ro"),
+                "/output": (attempt_directory / "output", "rw"),
+                "/platform/app-builder": (attempt_directory / "builder", "ro"),
+                f"/platform/run/{attempt}/build-env.json": (attempt_directory / "build-env.json", "ro"),
+            },
+        }
+        job = mode in job_mounts
+        offline = mode in ("app-analysis", "skill-build")
+        if job:
+            expected = {
+                "/platform/run/.leases": (directory / "attempts" / ".leases", "ro"),
+                "/platform/bridge": (attempt_directory / "bridge", "rw"),
+                **job_mounts[mode],
+            }
         seen = {}
         for bind in host.get("binds", []):
-            source, target, mode = bind.split(":")
+            source, target, mount_mode = bind.split(":")
             path = Path(source)
-            valid = expected.get(target) == (path, mode)
-            if target == "/dependency-cache":
-                valid = (mode == "rw" and path.parent == workspace_root / ".dependency-caches" and
+            valid = expected.get(target) == (path, mount_mode)
+            if not job and target == "/opt/harbor-skills":
+                valid = (mount_mode == "ro" and path.parent == directory / "capabilities" and
+                         re.fullmatch(r"[a-f0-9]{64}", path.name))
+            if not job and target == "/opt/harbor-app-skills":
+                valid = (path, mount_mode) == (attempt_directory / "application-skills", "ro")
+            if not job and target == "/dependency-cache":
+                valid = (mount_mode == "rw" and path.parent == workspace_root / ".dependency-caches" and
                          re.fullmatch(r"[a-f0-9]{64}", path.name))
             if target in seen or not valid or not path.exists() or path.resolve() != path:
                 raise RuntimeError("Unexpected Runner mount")
-            seen[target] = mode
-        if set(seen) != {*expected, "/dependency-cache"}:
+            seen[target] = mount_mode
+        if not (set(expected) if job else {*expected, "/dependency-cache"}).issubset(seen):
             raise RuntimeError("Incomplete Runner mounts")
         host.update(
             read_only=True, init=True, tmpfs={"/tmp": "rw,nosuid,size=256m,mode=1777"},
@@ -109,14 +189,26 @@ def install(assets: Path, seccomp: Path, network: str, workspace_root: Path, own
             security_opt=["no-new-privileges", "seccomp=" + policy],
             binds=[*host["binds"], f"{assets}:{RUNTIME}:ro"],
         )
+        if job:
+            host.update(mem_limit=2 * 1024 ** 3, pids_limit=128, security_opt=["no-new-privileges"])
+        if offline:
+            host.update(network_mode="none", port_bindings={}, extra_hosts={})
+        if mode == "app-analysis":
+            host.update(nano_cpus=1_000_000_000, mem_limit=1024 ** 3,
+                        tmpfs={"/tmp": "rw,nosuid,nodev,mode=1777,size=128m"})
+        if mode == "skill-build":
+            host.update(tmpfs={"/tmp": "rw,nosuid,size=512m,mode=1777"})
+        if mode == "app-build":
+            host.update(tmpfs={"/work": "rw,exec,nosuid,nodev,size=1200m,mode=1777",
+                               "/tmp": "rw,noexec,nosuid,size=256m,mode=1777"})
         # No caller-provided bootstrap flags or daemon credentials reach the process.
         env = [item for item in environment if item.startswith("OPENSANDBOX_SANDBOX_ID=")]
         env += ["EXECD_ENVS=/tmp/opensandbox.env", f"HARBOR_MANAGER_LEASE={RUNTIME}/{lease_name}"]
-        labels = {**labels, "harbor.os.profile": "strict-v1"}
+        labels = {**labels, "harbor.os.profile": "strict-v1", "harbor.os.mode": mode}
         # Match Harbor's existing outer profile for the native bwrap initialization.
         clean_command = ["/usr/bin/env", "-u", "EXECD_ACCESS_TOKEN", "-u", "EXECD_ENVS", *bootstrap_command]
         return upstream(service, sandbox_id, image_uri, clean_command, labels, env,
-                        host, exposed_ports, platform, unconfine_system_paths=True)
+                        host, [] if offline else exposed_ports, platform, unconfine_system_paths=not job)
 
     DockerSandboxService._create_and_start_container = create
     # The mounted assets are already present before the container starts.
@@ -131,7 +223,12 @@ def serve(args) -> None:
     owner = hashlib.sha256(str(root).encode()).hexdigest()[:16]
     epoch = str(uuid4())
     lease_name = f"manager-{owner}-{epoch}.lease"
-    install(assets, args.seccomp, args.network, root, owner, epoch, lease_name)
+    application_root = args.application_root
+    if application_root is not None:
+        if (application_root != application_root.resolve() or not application_root.is_dir() or
+                not application_root.is_relative_to(root) or application_root == root):
+            raise RuntimeError("Application configuration root must be a dedicated canonical directory")
+    install(assets, args.seccomp, args.network, root, owner, epoch, lease_name, application_root)
     os.environ[CONFIG_ENV_VAR] = str(args.config)
     config = load_config()
     server = config.server
@@ -156,12 +253,26 @@ def serve(args) -> None:
         for container in client.containers.list(all=True, filters={"label": [
             f"harbor.os.owner={owner}", "harbor.os.profile=strict-v1",
         ]}):
-            if container.attrs["HostConfig"]["NetworkMode"] != args.network:
+            mode = container.labels.get("harbor.os.mode")
+            expected_network = "none" if mode in ("app-analysis", "skill-build") else args.network
+            if container.attrs["HostConfig"]["NetworkMode"] != expected_network:
                 raise RuntimeError("Runner network changed with existing containers")
             try:
                 container.remove(force=True)
             except docker.errors.NotFound:
                 pass
+
+        if application_root:
+            app_owner = hashlib.sha256(str(application_root.parent).encode()).hexdigest()[:16]
+            for app_network in client.networks.list(filters={"label": f"harbor.os.app-network-owner={app_owner}"}):
+                sandbox_id = app_network.attrs.get("Labels", {}).get("harbor.os.app-network", "")
+                if not UUID.fullmatch(sandbox_id) or app_network.name != f"harbor-os-app-{sandbox_id}":
+                    raise RuntimeError("Application network ownership unconfirmed")
+                if not client.containers.list(all=True, filters={"label": f"opensandbox.io/id={sandbox_id}"}):
+                    try:
+                        app_network.remove()
+                    except docker.errors.NotFound:
+                        pass
 
         lease = assets / lease_name
         fd = os.open(lease, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o644)
@@ -187,7 +298,10 @@ def serve(args) -> None:
             if (scope != owner or not hmac.compare_digest(
                     request.headers.get("OPEN-SANDBOX-API-KEY", ""), server.api_key)):
                 raise HTTPException(404)
-            return {"profile": "strict-v1", "epoch": epoch}
+            features = ["plugins", "mcp-probe", "app-analysis", "skill-build", "app-build"]
+            if application_root:
+                features.append("app-runtime")
+            return {"profile": "strict-v1", "epoch": epoch, "features": features}
 
         try:
             uvicorn.run(app, host=server.host, port=server.port, log_config=configure_logging(config.log))
@@ -204,4 +318,5 @@ if __name__ == "__main__":
     parser.add_argument("--network", required=True)
     parser.add_argument("--workspace-root", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--application-root", type=Path)
     serve(parser.parse_args())

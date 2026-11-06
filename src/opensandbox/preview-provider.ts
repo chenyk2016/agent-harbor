@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { AppDockerDriver } from "../service/applications/docker.js";
 import { requireAppId } from "../service/applications/source-store.js";
 import type { EnvironmentRef } from "../runtime/providers/contracts.js";
-import type { PreviewLaunch, PreviewProvider } from "../runtime/providers/preview.js";
+import { applicationRuntimeAccess, applicationRuntimeHeader, type PreviewLaunch, type PreviewProvider } from "../runtime/providers/preview.js";
 
 const sandboxLabel = "opensandbox.io/id";
 const ownerLabel = "harbor.preview.owner";
@@ -20,14 +20,20 @@ export interface OpenSandboxPreviewClient {
   endpoint(id: string, port: number): Promise<URL>;
 }
 
+export const strictApplicationBackend = "opensandbox-app";
+export const pilotApplicationBackend = "opensandbox-preview";
+
 export class OpenSandboxPreviewProvider implements PreviewProvider {
-  readonly backendId = "opensandbox-preview";
+  get backendId() {
+    return this.accessKey ? strictApplicationBackend : pilotApplicationBackend;
+  }
 
   constructor(
     private readonly client: OpenSandboxPreviewClient,
     private readonly docker: AppDockerDriver,
     private readonly configDirectory: string,
     private readonly managementOrigin: URL,
+    private readonly accessKey?: string,
   ) {
     if (managementOrigin.protocol !== "http:" || managementOrigin.hostname !== "127.0.0.1" ||
         managementOrigin.username || managementOrigin.password || managementOrigin.href !== managementOrigin.origin + "/")
@@ -64,7 +70,8 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
   async create({ build, deploymentId, databaseUrl, visitorAuth, observation }: PreviewLaunch) {
     requireAppId(build.appId);
     requireAppId(deploymentId);
-    if (build.target !== "preview" || build.basePath !== `/preview/${build.appId}/` ||
+    if ((!this.accessKey && build.target !== "preview") || !["preview", "production"].includes(build.target) ||
+        build.basePath !== `/${build.target === "preview" ? "preview" : "apps"}/${build.appId}/` ||
         !/^sha256:[a-f0-9]{64}$/.test(build.imageId)) throw new Error("Invalid preview build");
     if ((await this.findOwned(deploymentId)).length) throw new Error("Preview already exists");
     await mkdir(this.configDirectory, { recursive: true, mode: 0o700 });
@@ -73,6 +80,7 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
     await writeFile(configPath, JSON.stringify({
       appId: build.appId, revisionId: build.revisionId, buildId: build.id,
       deploymentId, basePath: build.basePath, databaseUrl,
+      ...(this.accessKey ? { runtimeAccess: applicationRuntimeAccess(this.accessKey, deploymentId) } : {}),
       ...(visitorAuth ? { visitorAuth, environment: build.target } : {}),
       ...(observation ? { observation } : {}),
     }), { flag: "wx", mode: 0o444 });
@@ -81,8 +89,11 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
       metadata: { [ownerLabel]: this.docker.owner, [intentLabel]: deploymentId },
     });
     const ref = { backendId: this.backendId, resourceId };
-    if (await this.inspect(ref) !== "running") throw new Error("Sandbox start unconfirmed");
-    return ref;
+    for (let tries = 0; tries < 80; tries++) {
+      if (await this.inspect(ref) === "running") return ref;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    throw new Error("Sandbox start unconfirmed");
   }
 
   async inspect(ref: EnvironmentRef) {
@@ -110,6 +121,24 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
 
   async remove(ref: EnvironmentRef) {
     if (await this.inspect(ref) !== "absent") throw new Error("Sandbox deletion unconfirmed");
+    if (!this.accessKey) return;
+    const id = this.id(ref);
+    const name = "harbor-os-app-" + id;
+    const absent = (error: unknown) =>
+      /network .* not found/i.test(String((error as { stderr?: string }).stderr));
+    let network;
+    try {
+      [network] = JSON.parse(await this.docker.command(["network", "inspect", name]));
+    } catch (error) {
+      if (absent(error)) return;
+      throw error;
+    }
+    if (network?.Labels?.["harbor.os.app-network"] !== id ||
+        network.Labels["harbor.os.app-network-owner"] !== this.docker.owner)
+      throw new Error("Application network ownership unconfirmed");
+    await this.docker.command(["network", "rm", network.Id]).catch(error => {
+      if (!absent(error)) throw error;
+    });
   }
 
   /** Check engine state, because a correct proxy URL says nothing about raw host port exposure. */
@@ -127,18 +156,23 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
         bindings.length === 0 || bindings.some(binding => binding?.HostIp !== "127.0.0.1") ||
         host.Privileged !== false || !host.CapDrop?.includes("ALL") ||
         !host.SecurityOpt?.some((item: string) => item.startsWith("no-new-privileges")) ||
-        container.Config?.User !== "node")
+        container.Config?.User !== "node" ||
+        (this.accessKey && (host.ReadonlyRootfs !== true || container.Config.Labels["harbor.os.app-profile"] !== "strict-v1" ||
+          networks[0] !== "harbor-os-app-" + ref.resourceId)))
       throw new Error("OpenSandbox preview network or security profile is not private");
+    return requireAppId(container.Config.Labels[intentLabel]);
   }
 
   async resolvePrivateEndpoint(ref: EnvironmentRef) {
-    await this.requirePrivateRuntime(ref);
+    const deploymentId = await this.requirePrivateRuntime(ref);
     const id = this.id(ref);
     const url = await this.client.endpoint(id, 3000);
     if (url.origin !== this.managementOrigin.origin ||
         url.pathname.replace(/\/$/, "") !== `/v1/sandboxes/${id}/proxy/3000` ||
         url.username || url.password || url.search || url.hash)
       throw new Error("Unexpected sandbox preview endpoint");
-    return { url };
+    return { url, ...(this.accessKey ? {
+      headers: { [applicationRuntimeHeader]: applicationRuntimeAccess(this.accessKey, deploymentId) },
+    } : {}) };
   }
 }

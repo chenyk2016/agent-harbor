@@ -5,6 +5,8 @@ import type { EnvironmentRef, SandboxProvider } from "./contracts.js";
 export interface RunnerTransport {
   readonly output: Readable;
   readonly diagnostics: Readable;
+  /** For an explicit finite job, returns its exit code or null on transport loss. */
+  readonly completion?: Promise<number | null>;
   onFailure(listener: (error: Error) => void): void;
   send(line: string): void;
   end(): void;
@@ -18,12 +20,12 @@ export interface ResidentLaunch {
   directory: string;
   attemptDirectory: string;
   leaseId: string;
-  requiresDocker?: boolean;
+  job?: "app-analysis" | "skill-build" | "app-build";
 }
 
 export interface ResidentProvider extends SandboxProvider<ResidentLaunch> {
   /** Docker knows the resource name before create, even if the response is lost. */
-  plannedRef(attemptId: string, requiresDocker?: boolean): EnvironmentRef;
+  plannedRef(attemptId: string): EnvironmentRef;
   findOwnedSessions(): Promise<string[]>;
   resolveImage(image: string): Promise<string>;
   start(ref: EnvironmentRef): Promise<void>;

@@ -15,6 +15,8 @@ import { join, resolve, sep } from "node:path";
 import type { AppEnvironment } from "./data.js";
 import { AppDockerDriver, type AppBuild } from "./docker.js";
 import { ApplicationSources, type SourceRevision } from "./source-store.js";
+import type { ResidentProvider } from "../../runtime/providers/resident.js";
+import { runBuildJob, stopBuildJobs } from "../../runtime/providers/build-job.js";
 import { parseManifest } from "./manifest.js";
 
 /** 把平台保存的固定源码版本构建成可运行镜像；构建容器和运行容器分离，宿主不执行应用的 npm 脚本。 */
@@ -27,6 +29,7 @@ export class ApplicationBuilder {
     readonly nodeBase: string,
     readonly runtimeDirectory = resolve("infra/app-runtime"),
     readonly downloadProxy?: string,
+    private readonly sandbox?: { root: string; provider: ResidentProvider },
   ) {
     this.driver = new AppDockerDriver(root);
   }
@@ -68,72 +71,89 @@ export class ApplicationBuilder {
     let success = false;
     try {
       signal?.throwIfAborted();
-      await this.driver.command([
-        "create",
-        "--name",
-        name,
-        "--init",
-        "--user",
-        "1000:1000",
-        "--read-only",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        // Vite/Rolldown要加载原生绑定，只有受限构建工作区允许exec映射；临时目录保持noexec。
-        "--memory",
-        "2g",
-        "--cpus",
-        "2",
-        "--pids-limit",
-        "128",
-        "--tmpfs",
-        "/work:rw,exec,nosuid,nodev,size=1200m,mode=1777",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=256m,mode=1777",
-        "--label",
-        `harbor.app.store=${this.driver.owner}`,
-        "--label",
-        `harbor.app.build=${id}`,
-        "--mount",
-        `type=bind,src=${input},dst=/input,readonly`,
-        "--mount",
-        `type=bind,src=${output},dst=/output`,
-        "--mount",
-        `type=bind,src=${this.runtimeDirectory},dst=/platform,readonly`,
-        "--env",
-        "HOME=/tmp",
-        "--env",
-        `APP_BASE_PATH=${basePath}`,
-        "--env",
-        `APP_REVISION=${applicationRevisionId}`,
-        ...(this.downloadProxy
-          ? [
-              "--env",
-              `HTTP_PROXY=${this.downloadProxy}`,
-              "--env",
-              `HTTPS_PROXY=${this.downloadProxy}`,
-              "--env",
-              `npm_config_proxy=${this.downloadProxy}`,
-              "--env",
-              `npm_config_https_proxy=${this.downloadProxy}`,
-            ]
-          : []),
-        image,
-        "node",
-        "/platform/launch.mjs",
-      ]);
-      signal?.throwIfAborted();
-      const log = await this.driver.command(
-        ["start", "--attach", name],
-        300000,
-        signal,
-      );
-      await writeFile(join(directory, "build.log"), log);
-      const state = await this.driver.inspect(name);
-      if (!state || state.State.Running || state.State.ExitCode !== 0)
-        throw new Error("APP_BUILD_FAILED");
-      await this.driver.destroy(name);
+      if (this.sandbox?.provider.backendId === "opensandbox-strict-runner") {
+        const timeout = signal ? AbortSignal.any([signal, AbortSignal.timeout(300000)]) : AbortSignal.timeout(300000);
+        const builderImage = await this.nonRootImage(image, directory, timeout);
+        const env = { APP_BASE_PATH: basePath, APP_REVISION: applicationRevisionId, ...(this.downloadProxy ? {
+          HTTP_PROXY: this.downloadProxy, HTTPS_PROXY: this.downloadProxy,
+          npm_config_proxy: this.downloadProxy, npm_config_https_proxy: this.downloadProxy,
+        } : {}) };
+        let log = "";
+        try {
+          await runBuildJob(this.sandbox.provider, this.sandbox.root, {
+            id, image: builderImage, input, output, work: { type: "app-build", builder: this.runtimeDirectory, env },
+          }, timeout, async text => { if (log.length < 1024 * 1024) log += text; });
+        } finally {
+          await writeFile(join(directory, "build.log"), log);
+        }
+      } else {
+        await this.driver.command([
+          "create",
+          "--name",
+          name,
+          "--init",
+          "--user",
+          "1000:1000",
+          "--read-only",
+          "--cap-drop",
+          "ALL",
+          "--security-opt",
+          "no-new-privileges",
+          // Vite/Rolldown要加载原生绑定，只有受限构建工作区允许exec映射；临时目录保持noexec。
+          "--memory",
+          "2g",
+          "--cpus",
+          "2",
+          "--pids-limit",
+          "128",
+          "--tmpfs",
+          "/work:rw,exec,nosuid,nodev,size=1200m,mode=1777",
+          "--tmpfs",
+          "/tmp:rw,noexec,nosuid,size=256m,mode=1777",
+          "--label",
+          `harbor.app.store=${this.driver.owner}`,
+          "--label",
+          `harbor.app.build=${id}`,
+          "--mount",
+          `type=bind,src=${input},dst=/input,readonly`,
+          "--mount",
+          `type=bind,src=${output},dst=/output`,
+          "--mount",
+          `type=bind,src=${this.runtimeDirectory},dst=/platform,readonly`,
+          "--env",
+          "HOME=/tmp",
+          "--env",
+          `APP_BASE_PATH=${basePath}`,
+          "--env",
+          `APP_REVISION=${applicationRevisionId}`,
+          ...(this.downloadProxy
+            ? [
+                "--env",
+                `HTTP_PROXY=${this.downloadProxy}`,
+                "--env",
+                `HTTPS_PROXY=${this.downloadProxy}`,
+                "--env",
+                `npm_config_proxy=${this.downloadProxy}`,
+                "--env",
+                `npm_config_https_proxy=${this.downloadProxy}`,
+              ]
+            : []),
+          image,
+          "node",
+          "/platform/launch.mjs",
+        ]);
+        signal?.throwIfAborted();
+        const log = await this.driver.command(
+          ["start", "--attach", name],
+          300000,
+          signal,
+        );
+        await writeFile(join(directory, "build.log"), log);
+        const state = await this.driver.inspect(name);
+        if (!state || state.State.Running || state.State.ExitCode !== 0)
+          throw new Error("APP_BUILD_FAILED");
+        await this.driver.destroy(name);
+      }
       signal?.throwIfAborted();
       await validateArtifact(output);
       await copyFile(
@@ -200,6 +220,7 @@ export class ApplicationBuilder {
     } finally {
       // 清理不明时抛错而非宣称失败产物已释放；确定名字支持后续人工/启动核对。
       try {
+        if (this.sandbox) await stopBuildJobs(this.sandbox.provider, id);
         await this.driver.destroy(name);
       } catch (error) {
         await writeFile(
@@ -216,6 +237,24 @@ export class ApplicationBuilder {
       await chmod(output, 0o700);
     }
   }
+
+  /** OCI assembly only. Application code is executed later by the selected sandbox. */
+  private async nonRootImage(image: string, directory: string, signal: AbortSignal) {
+    const user = await this.driver.command(["image", "inspect", "--format", "{{.Config.User}}", image]);
+    if (["node", "1000", "1000:1000"].includes(user)) return image;
+    const suffix = image.slice("sha256:".length);
+    const base = `agent-harbor-builder-base:${suffix}`;
+    const tag = `agent-harbor-builder-unprivileged:${suffix}`;
+    const cached = await this.driver.imageId(tag).catch(() => undefined);
+    if (cached) return cached;
+    const context = join(directory, "builder-base");
+    await mkdir(context, { recursive: true });
+    await this.driver.command(["tag", image, base]);
+    await writeFile(join(context, "Dockerfile"), `FROM ${base}\nUSER 1000:1000\n`);
+    await this.driver.command(["build", "--pull=false", "--network=none", "-t", tag, context], 120000, signal);
+    return this.driver.imageId(tag);
+  }
+
 }
 
 /** Builder输出仍不可信：不接受特殊文件、越界软链接或无限产物。 */

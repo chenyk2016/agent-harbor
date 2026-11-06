@@ -1,10 +1,9 @@
-import { prepareRunnerMounts } from "./runner-mounts.js";
+import { prepareRunnerMounts, prepareRunnerPlugins } from "./runner-mounts.js";
 /**
  * 宿主机上的 Docker 操作封装，供 Controller 调用。
  * 负责固定规格的创建、启动、查询、停止与删除；会话状态由 Controller 保存。
  * 统一通过 Docker CLI 操作；参数数组直接传给进程，避免拼接 shell 字符串。
  */
-import { cp } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -12,7 +11,6 @@ import { createHash } from "node:crypto";
 import type { Profile, Task } from "../shared/types.js";
 import { fileURLToPath } from "node:url";
 import { containerPaths } from "../shared/paths.js";
-import { applicationExpertId, applicationSkillPluginPath } from "../shared/application-skills.js";
 
 const exec = promisify(execFile);
 const project = "agent-harbor";
@@ -104,15 +102,7 @@ export class DockerBackend {
       throw new Error("MCP_NATIVE_RUNTIME_UNSUPPORTED: select a native MCP runtime image");
   }
 
-  /** 创建固定运行环境，同一 attempt 重试复用同名容器；此方法尚不启动进程。 */
-  async create(
-    task: Task,
-    profile: Profile,
-    directory: string,
-    attemptDirectory: string,
-    persistent = false,
-    leaseId?: string,
-  ) {
+  async validateRunnerImage(task: Task, image: string) {
     // 旧镜像会忽略新的 expert 字段；明确拒绝，避免专家会话悄悄退化成普通会话。
     if (
       task.expert?.workbuddy &&
@@ -121,7 +111,7 @@ export class DockerBackend {
         "inspect",
         "--format",
         '{{ index .Config.Labels "io.agent-harbor.workbuddy" }}',
-        profile.image,
+        image,
       ])) !== "1"
     )
       throw new Error(
@@ -134,13 +124,25 @@ export class DockerBackend {
         "inspect",
         "--format",
         '{{ index .Config.Labels "io.agent-harbor.experts" }}',
-        profile.image,
+        image,
       ])) !== "1"
     )
       throw new Error(
         "EXPERT_RUNTIME_UNSUPPORTED: use an expert-capable runtime image",
       );
-    if (task.hasLocalMcp || task.mcpProbe) await this.requireNativeMcpImage(profile.image);
+    if (task.hasLocalMcp || task.mcpProbe) await this.requireNativeMcpImage(image);
+  }
+
+  /** 创建固定运行环境，同一 attempt 重试复用同名容器；此方法尚不启动进程。 */
+  async create(
+    task: Task,
+    profile: Profile,
+    directory: string,
+    attemptDirectory: string,
+    persistent = false,
+    leaseId?: string,
+  ) {
+    await this.validateRunnerImage(task, profile.image);
     const name = dockerSessionName(task.attemptId);
     const existing = await this.inspect(name);
     if (existing) return name;
@@ -150,16 +152,7 @@ export class DockerBackend {
       new URL("../../../infra/seccomp.json", import.meta.url),
     );
     const { cacheDirectory, policyFile } = await prepareRunnerMounts(this.root, task, directory, attemptDirectory);
-    // 平台按应用专家快照装载技能包。它留在只读挂载内，与可发布源码分离。
-    const applicationPlugin = task.expert?.expertId === applicationExpertId
-      ? join(attemptDirectory, "application-skills")
-      : undefined;
-    if (applicationPlugin)
-      await cp(
-        fileURLToPath(new URL("../../../templates/platform-skills/harbor-app", import.meta.url)),
-        applicationPlugin,
-        { recursive: true },
-      );
+    const plugins = await prepareRunnerPlugins(task, directory, attemptDirectory);
     await this.command([
       "create",
       "--name",
@@ -215,15 +208,7 @@ export class DockerBackend {
       `type=bind,src=${directory}/claude-state,dst=${containerPaths.state}`,
       "--mount",
       `type=bind,src=${persistent || task.mcpProbe ? `${directory}/attempts` : attemptDirectory},dst=${containerPaths.run},readonly`,
-      ...(task.capabilities
-        ? [
-            "--mount",
-            `type=bind,src=${directory}/capabilities/${task.capabilities.digest},dst=/opt/harbor-skills,readonly`,
-          ]
-        : []),
-      ...(applicationPlugin
-        ? ["--mount", `type=bind,src=${applicationPlugin},dst=${applicationSkillPluginPath},readonly`]
-        : []),
+      ...plugins.flatMap(({ source, target }) => ["--mount", `type=bind,src=${source},dst=${target},readonly`]),
       ...(policyFile
         ? [
             "--mount",

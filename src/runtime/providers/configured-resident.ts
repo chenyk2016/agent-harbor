@@ -16,8 +16,8 @@ export class ConfiguredResidentProvider implements ResidentProvider {
 
   get backendId() { return this.selected().backendId; }
 
-  private selected(requiresDocker = false) {
-    return this.settings && !requiresDocker ? this.openSandbox : this.docker;
+  private selected() {
+    return this.settings ? this.openSandbox : this.docker;
   }
 
   private backend(ref: EnvironmentRef): ResidentProvider {
@@ -26,8 +26,8 @@ export class ConfiguredResidentProvider implements ResidentProvider {
     throw new Error("Unknown resident backend");
   }
 
-  plannedRef(attemptId: string, requiresDocker?: boolean) {
-    return this.selected(requiresDocker).plannedRef(attemptId);
+  plannedRef(attemptId: string) {
+    return this.selected().plannedRef(attemptId);
   }
 
   async findOwned(sessionId: string) {
@@ -45,7 +45,7 @@ export class ConfiguredResidentProvider implements ResidentProvider {
   }
 
   resolveImage(image: string) { return this.docker.resolveImage(image); }
-  create(launch: ResidentLaunch) { return this.selected(launch.requiresDocker).create(launch); }
+  create(launch: ResidentLaunch) { return this.selected().create(launch); }
   stopOnCancel(ref: EnvironmentRef) { return this.backend(ref).stopOnCancel?.(ref) ?? false; }
   start(ref: EnvironmentRef) { return this.backend(ref).start(ref); }
   inspect(ref: EnvironmentRef) { return this.backend(ref).inspect(ref); }

@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import ts from "/work/node_modules/typescript/lib/typescript.js";
 import { build } from "/work/node_modules/vite/dist/node/index.js";
 const input = JSON.parse(await readFile("/input/harbor-app.json", "utf8"));
-await cp("/platform/browser.js", "/work/__harbor_observe.js");
+await cp(new URL("./browser.js", import.meta.url), "/work/__harbor_observe.js");
 // 固定 Vite 构建配置：按目标环境设置访问前缀，并把版本和观测声明写入前端产物。
 await build({
   root: "/work",

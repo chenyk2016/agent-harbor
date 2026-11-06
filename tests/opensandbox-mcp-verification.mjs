@@ -67,13 +67,7 @@ try {
   await chat.close(); chat = undefined;
   console.log("PASS real text-tools MCP calls on the selected OpenSandbox provider");
 
-  // Run an adversarial fixture through the same native stdio launcher and policy.
-  // The fixture's script type is deliberately excluded by product routing.
-  class IsolatedMcpProvider extends ConfiguredResidentProvider {
-    plannedRef(attempt) { return super.plannedRef(attempt); }
-    create(launch) { return super.create({ ...launch, requiresDocker: false }); }
-  }
-  const probe = new Controller(root, profile, engine => new IsolatedMcpProvider(engine, settings));
+  const probe = c;
   const id = randomUUID();
   const source = `
 import { createInterface } from "node:readline";
@@ -106,15 +100,6 @@ for await (const line of createInterface({ input: process.stdin })) {
   const localProbe = { id, command: [], env: {}, script: {
     entry: "guard.mjs", runtime: "node", install: "none", files: { "guard.mjs": source },
   } };
-  chat = await c.open("fallback", token, { localMcp: [localProbe] });
-  select(id, "test_guard", {});
-  const fallback = await chat.run("Call the script through its existing Docker provider");
-  assert.equal(fallback.status, "succeeded", JSON.stringify(fallback));
-  assert.equal(fallback.runtimeBackend, "docker");
-  assertTool('"privateFile":"blocked"');
-  await chat.close(); chat = undefined;
-  console.log("PASS unqualified script MCP remains on Docker");
-
   for (const mode of ["cancel", "manager"]) {
     const dir = await probe.store.prepare(mode);
     await writeFile(join(dir, "workspace/public"), "workspace-ok");

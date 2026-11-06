@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { applicationExpertId, applicationSkillPluginPath } from "../shared/application-skills.js";
 import type { Task } from "../shared/types.js";
 import { mcpSandboxPolicy } from "../shared/sandbox-policy.js";
 
@@ -39,4 +41,19 @@ export async function prepareRunnerMounts(root: string, task: Task, directory: s
       { mode: 0o644 },
     );
   return { cacheDirectory, policyFile };
+}
+
+/** Immutable skill snapshots and the platform-owned app plugin share both resident backends. */
+export async function prepareRunnerPlugins(task: Task, directory: string, attemptDirectory: string) {
+  const mounts: { source: string; target: string }[] = [];
+  if (task.capabilities) {
+    if (!/^[a-f0-9]{64}$/.test(task.capabilities.digest)) throw new Error("Invalid capability snapshot digest");
+    mounts.push({ source: join(directory, "capabilities", task.capabilities.digest), target: "/opt/harbor-skills" });
+  }
+  if (task.expert?.expertId === applicationExpertId) {
+    const source = join(attemptDirectory, "application-skills");
+    await cp(fileURLToPath(new URL("../../../templates/platform-skills/harbor-app", import.meta.url)), source, { recursive: true });
+    mounts.push({ source, target: applicationSkillPluginPath });
+  }
+  return mounts;
 }

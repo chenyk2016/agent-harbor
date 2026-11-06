@@ -2,7 +2,7 @@
 import express from "express";
 import { Pool } from "pg";
 import { readFile } from "node:fs/promises";
-import { createPublicKey, randomUUID, verify } from "node:crypto";
+import { createPublicKey, randomUUID, timingSafeEqual, verify } from "node:crypto";
 import { observations } from "./harbor-observe.mjs";
 import { register } from "./server/index.mjs";
 
@@ -20,6 +20,16 @@ const pool = new Pool({
 pool.on("error", (error) => console.error("APP_DATABASE_ERROR", error.code));
 const app = express();
 app.disable("x-powered-by");
+// A network peer or caller of the manager proxy still needs this deployment's edge credential.
+const runtimeAccess = configuration.runtimeAccess ? Buffer.from(configuration.runtimeAccess) : undefined;
+app.use((request, response, next) => {
+  const value = request.headers["x-app-runtime-access"];
+  delete request.headers["x-app-runtime-access"];
+  const received = typeof value === "string" ? Buffer.from(value) : undefined;
+  if (runtimeAccess && (!received || received.length !== runtimeAccess.length || !timingSafeEqual(received, runtimeAccess)))
+    return response.status(404).end();
+  next();
+});
 const router = express.Router({ caseSensitive: true });
 const observe = observations(configuration, manifest, pool);
 const publicIdentity = observe.identity;

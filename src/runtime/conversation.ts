@@ -1,4 +1,3 @@
-import { isOfflineTextMcp } from "../shared/mcp.js";
 import { prepareMcpStartup, clearStartupCredentials } from "./mcp-startup.js";
 /**
  * 宿主上的连续对话管理。
@@ -299,7 +298,7 @@ export class ResidentConversation implements Conversation {
     };
     this.tasksByAttempt.set(task.attemptId, task);
     this.activeTurn = turn;
-    const environment = this.environment ?? this.controller.resident.plannedRef(task.attemptId, this.requiresDocker());
+    const environment = this.environment ?? this.controller.resident.plannedRef(task.attemptId);
     this.session = {
       runtimeBackend: environment.backendId,
       expertDigest: this.options.expert?.digest,
@@ -317,11 +316,6 @@ export class ResidentConversation implements Conversation {
     return turn;
   }
 
-  private requiresDocker() {
-    return Boolean(this.options.expert || this.options.capabilities?.skills.length ||
-      this.options.localMcp?.some(launch => !isOfflineTextMcp(launch)) || Object.keys(this.options.mcpServers ?? {}).length || this.options.networkDomains?.length);
-  }
-
   /** 只有首轮或环境重建才启动进程，正常后续轮次直接复用管道。 */
   private async ensureRunnerStarted(turn: Turn) {
     if (this.runnerChannel) return;
@@ -329,7 +323,7 @@ export class ResidentConversation implements Conversation {
     this.environmentCleanup = undefined;
     this.stderrWrites = Promise.resolve();
     const provider = this.controller.resident;
-    this.environment = provider.plannedRef(turn.task.attemptId, this.requiresDocker());
+    this.environment = provider.plannedRef(turn.task.attemptId);
     this.runnerId = turn.task.attemptId;
     const mcpServers = await prepareMcpStartup(
       this.directory,
@@ -354,7 +348,6 @@ export class ResidentConversation implements Conversation {
       directory: this.directory,
       attemptDirectory: turn.directory,
       leaseId: this.leaseId,
-      requiresDocker: this.requiresDocker(),
     });
     if (turn.cancelled) throw new Error("Cancelled during create");
     await provider.start(this.environment);

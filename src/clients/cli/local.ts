@@ -5,6 +5,7 @@
  */
 import { cp, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { residentFromEnvironment } from "../../service/config.js";
 import { ConfiguredResidentProvider } from "../../runtime/providers/configured-resident.js";
 import { Controller } from "../../runtime/controller.js";
 import { lockSession } from "../../runtime/storage.js";
@@ -35,7 +36,7 @@ if (!command || !sessionId) {
       model: process.env.AH_MODEL ?? defaultProfile.model,
       image: process.env.AH_IMAGE ?? defaultProfile.image,
     },
-    engine => new ConfiguredResidentProvider(engine),
+    engine => new ConfiguredResidentProvider(engine, residentFromEnvironment()),
   );
   try {
     if (command === "init") {

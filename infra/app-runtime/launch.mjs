@@ -1,6 +1,7 @@
 /** 构建容器入口：复制固定源码、禁用依赖安装脚本，再调用平台构建器；整个过程不在宿主执行。 */
 import { cp } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 await cp("/input", "/work", { recursive: true, force: true });
 for (const args of [
   [
@@ -25,7 +26,7 @@ for (const args of [
       "web-vitals@6.2.3",
     ],
   ],
-  ["node", ["/platform/build.mjs"]],
+  ["node", [fileURLToPath(new URL("./build.mjs", import.meta.url))]],
 ]) {
   await new Promise((resolve, reject) => {
     const child = spawn(args[0], args[1], { cwd: "/work", stdio: "inherit" });

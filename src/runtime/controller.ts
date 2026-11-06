@@ -106,6 +106,12 @@ export class Controller {
     onEvent: (event: Event) => void = () => {},
     signal?: AbortSignal,
   ): Promise<Session> {
+    if (this.resident.backendId === "opensandbox-strict-runner") {
+      const conversation = await this.open(sessionId, token);
+      try { await conversation.run(prompt, onEvent, signal); }
+      finally { await conversation.close(); }
+      return this.store.load(sessionId);
+    }
     const directory = await this.store.prepare(sessionId);
     const release = await lockSession(directory);
     try {
