@@ -246,7 +246,7 @@ export function CommandPalette({
         position="fixed"
         inset={0}
         zIndex={1500}
-        bg="rgba(20,19,18,.38)"
+        bg="rgba(0,0,0,.38)"
         display="flex"
         justifyContent="center"
         alignItems="flex-start"

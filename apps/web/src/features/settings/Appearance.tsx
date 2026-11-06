@@ -20,19 +20,19 @@ const options: Array<{
     value: "light",
     label: "浅色",
     icon: <Sun size={14} />,
-    swatch: ["#F6F5F2", "#FFFFFF", "#2E5AE0"],
+    swatch: ["#F5F5F7", "#FFFFFF", "#0A84FF"],
   },
   {
     value: "dark",
     label: "深色",
     icon: <Moon size={14} />,
-    swatch: ["#121211", "#191918", "#7E9DFF"],
+    swatch: ["#161617", "#1C1C1E", "#4A9DFF"],
   },
   {
     value: "system",
     label: "跟随系统",
     icon: <Monitor size={14} />,
-    swatch: ["#F6F5F2", "#191918", "#2E5AE0"],
+    swatch: ["#F5F5F7", "#1C1C1E", "#0A84FF"],
     split: true,
   },
 ];
@@ -85,7 +85,7 @@ export function Appearance() {
                     <>
                       <Box flex={1} bg={option.swatch[0]} />
                       <Box flex={1} bg={option.swatch[1]} />
-                      <Box flex={1} bgGradient="linear(to-r, #2E5AE0, #7E9DFF)" />
+                      <Box flex={1} bgGradient="linear(to-r, #0A84FF, #4A9DFF)" />
                     </>
                   ) : (
                     option.swatch.map((color) => (
@@ -126,7 +126,7 @@ export function Appearance() {
             {preference === "system" && "（跟随系统）"}
           </Flex>
           <Text fontSize="10.5px" color="muted" mt={3} lineHeight={1.6}>
-            偏好只保存在这台设备的浏览器里。界面稿中的字号与动效设置尚未开放，正式版会按同一套 token 提供。
+            偏好只保存在这台设备的浏览器里；选择「跟随系统」时，会随设备当前的深浅色设置自动切换。
           </Text>
         </Box>
       </Box>

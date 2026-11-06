@@ -177,7 +177,7 @@ export function StatusInline({ message }: { message?: Message | null }) {
 export function Mark({ small = false }: { small?: boolean }) {
   return (
     <Box
-      bgGradient="linear(to-br, #17326F, #2E5AE0)"
+      bgGradient="linear(to-br, #005BB5, #0A84FF)"
       color="white"
       display="grid"
       placeItems="center"
@@ -185,7 +185,7 @@ export function Mark({ small = false }: { small?: boolean }) {
       w={small ? "24px" : "46px"}
       h={small ? "24px" : "46px"}
       flexShrink={0}
-      boxShadow="0 2px 6px rgba(23,50,111,.25)"
+      boxShadow="0 2px 6px rgba(0,113,227,.28)"
     >
       <Anchor size={small ? 14 : 24} strokeWidth={2} />
     </Box>

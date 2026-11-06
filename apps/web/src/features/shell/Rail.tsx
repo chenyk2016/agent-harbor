@@ -103,8 +103,8 @@ export function Rail({
         mb="8px"
         borderRadius="11px"
         color="white"
-        bgGradient="linear(to-br, #17326F, #2E5AE0)"
-        boxShadow="inset 0 1px 0 rgba(255,255,255,.2), 0 2px 6px rgba(23,50,111,.25)"
+        bgGradient="linear(to-br, #005BB5, #0A84FF)"
+        boxShadow="inset 0 1px 0 rgba(255,255,255,.18), 0 2px 6px rgba(0,113,227,.28)"
         flexShrink={0}
       >
         <Anchor size={19} strokeWidth={2} />
