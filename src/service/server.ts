@@ -55,11 +55,11 @@ try {
   const auth = await Auth.load(
     join(serviceDirectory, "access-keys.json"),
   ).catch((error) => {
-    if (error.code === "ENOENT" && (identity.oidc || identity.workbench)) return new Auth([]);
+    if (error.code === "ENOENT") return new Auth([]);
     throw error;
   });
   if (!auth.keys.length && !identity.oidc && !identity.workbench)
-    throw new Error("Configure access keys or browser authentication");
+    throw new Error("No login credentials. For a new managed instance, set AH_BOOTSTRAP_ADMIN_KEY and run harbor init before starting.");
   // 表结构由受控迁移步骤建立；服务启动只连接，不自动建表或争抢执行迁移。
   database = openDatabase();
   const workbenchAuth = identity.workbench && new WorkbenchAuth(database.pool, identity.workbench);

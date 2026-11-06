@@ -1,4 +1,6 @@
 import test from "node:test";
+import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import {
   mkdtemp,
@@ -55,17 +57,30 @@ test("delivery: explicit empty instance, private configuration, no production en
   }
 });
 
-test("delivery: bootstrap is idempotent, does not recover or rotate an existing credential", async () => {
+test("delivery: bootstrap requires an explicit key once and never rotates it on restart or retry", async () => {
   const root = await mkdtemp(join(tmpdir(), "harbor-delivery-"));
+  const previous = process.env.AH_BOOTSTRAP_ADMIN_KEY;
   try {
     const dir = join(root, "instance");
     await configure(dir, "agent-harbor:admin-operations-v28");
     const c = await config(dir);
+    delete process.env.AH_BOOTSTRAP_ADMIN_KEY;
+    await assert.rejects(initialize(c, "operator"), /AH_BOOTSTRAP_ADMIN_KEY_REQUIRED/);
+    await assert.rejects(readFile(join(dir, "bootstrap.json")), /ENOENT/);
+    process.env.AH_BOOTSTRAP_ADMIN_KEY = "invalid";
+    await assert.rejects(initialize(c, "operator"), /INVALID_AH_BOOTSTRAP_ADMIN_KEY/);
+    const key = randomBytes(32).toString("base64url");
+    process.env.AH_BOOTSTRAP_ADMIN_KEY = key;
     const first = await initialize(c, "operator");
     assert.equal(first.reused, false);
     const before = await readFile(join(dir, "first-admin.key"), "utf8");
+    assert.equal(before, key + "\n");
+    assert.equal((await config(dir)).env.AH_BOOTSTRAP_ADMIN_KEY, undefined);
+    delete process.env.AH_BOOTSTRAP_ADMIN_KEY;
     const again = await initialize(await config(dir), "operator");
     assert.equal(again.reused, true);
+    process.env.AH_BOOTSTRAP_ADMIN_KEY = randomBytes(32).toString("base64url");
+    assert.equal((await initialize(await config(dir), "operator")).reused, true);
     assert.equal(await readFile(join(dir, "first-admin.key"), "utf8"), before);
     await assert.rejects(initialize(c, "other"), /ADMIN_ALREADY/);
     const state = JSON.parse(
@@ -85,6 +100,30 @@ test("delivery: bootstrap is idempotent, does not recover or rotate an existing 
     );
     assert.ok(serviceUnit(c, "harbor").includes("UMask=0077"));
     assert.ok(monitorUnits(c, "harbor").timer.includes("OnUnitActiveSec=60"));
+  } finally {
+    if (previous === undefined) delete process.env.AH_BOOTSTRAP_ADMIN_KEY;
+    else process.env.AH_BOOTSTRAP_ADMIN_KEY = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("delivery: an uninitialized service refuses to start even with a bootstrap key", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harbor-delivery-"));
+  try {
+    await configure(root, "agent-harbor:fixture");
+    const c = await config(root);
+    const key = randomBytes(32).toString("base64url");
+    for (const bootstrapKey of [undefined, key]) {
+      const result = spawnSync(process.execPath, ["dist/src/service/server.js"], {
+        env: { ...environment(c), AH_BOOTSTRAP_ADMIN_KEY: bootstrapKey },
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /AH_BOOTSTRAP_ADMIN_KEY and run harbor init/);
+      assert.ok(!result.stderr.includes(key));
+    }
+    await assert.rejects(readFile(join(root, "first-admin.key")), /ENOENT/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -18,7 +18,7 @@ docker build -f infra/Dockerfile.release -t agent-harbor:YOUR_RELEASE .
 ```sh
 node dist/src/clients/ops/main.js configure --dir /srv/harbor-instance --image agent-harbor:YOUR_RELEASE
 node dist/src/clients/ops/main.js install --dir /srv/harbor-instance
-node dist/src/clients/ops/main.js init --dir /srv/harbor-instance --admin operator --model-config /secure/bootstrap-model.json
+AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" node dist/src/clients/ops/main.js init --dir /srv/harbor-instance --admin operator --model-config /secure/bootstrap-model.json
 node dist/src/clients/ops/main.js doctor --dir /srv/harbor-instance --runtime
 node --env-file=/srv/harbor-instance/harbor.env dist/src/service/server.js
 ```
@@ -28,6 +28,8 @@ node --env-file=/srv/harbor-instance/harbor.env dist/src/service/server.js
 Linux由Docker bridge实际网关地址提供仅/inference的钱包入口，并为Runner配置host.docker.internal:host-gateway；网页与管理API不暴露到这个入口。它沿用钱包凭据校验。macOS使用容器引擎提供的宿主别名。doctor --runtime实际创建命名空间探针，但不代表完整隔离审计；实际容器到模型入口由acceptance验证。禁止将Docker socket挂给用户任务，服务账号的Docker权限属于宿主高权限，应在专用机器运行。
 
 ## 管理员与模型初始化
+
+首次执行 `init` 必须通过该命令的进程环境提供 `AH_BOOTSTRAP_ADMIN_KEY`，接受 32 至 128 个字母、数字、下划线或短横线。可以从部署密钥管理器提供高强度随机值，也可以用上面的命令随机生成。缺少或格式不合规时初始化失败，服务也无法以空密钥实例启动。该变量只用于首次初始化，无需写入 `harbor.env`，重启、恢复和重复初始化继续使用已有凭据。
 
 `first-admin.key`仅在首次初始化写入0600文件，管理员通过受控方式交给本人，在登录页使用；不能贴到公共日志。服务停机时可为成员使用原有access-key工具显式创建密钥；OIDC配置继续复用既有身份入口。首个登录者不会自动成为管理员。重复init不轮换密钥、不恢复已撤销密钥、不覆盖模型。如果模型同步阶段失败，使用同一配置重跑init会核对现有供应商、加密凭据与模型后继续，不重复建模或轮换密钥。配置发生变化或匹配不唯一则拒绝自动选择，后续调整使用后台。若停在credentials-pending，表示凭据文件写入不确定：保留现场，核对first-admin.key与access-keys.json哈希后再修复检查点，不能直接删除重建。
 

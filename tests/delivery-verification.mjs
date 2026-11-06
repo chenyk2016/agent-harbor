@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { createServer as httpServer } from "node:http";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import {
   configure,
@@ -143,7 +143,14 @@ try {
     price: { input: "1", output: "2", cacheRead: "1", cacheWrite: "1" },
   });
   await stage("bootstrap-and-repeat-without-rotation", async () => {
-    const first = await initialize(source, "operator", modelFile);
+    const prior = process.env.AH_BOOTSTRAP_ADMIN_KEY;
+    const key = randomBytes(32).toString("base64url");
+    process.env.AH_BOOTSTRAP_ADMIN_KEY = key;
+    const first = await initialize(source, "operator", modelFile).finally(() => {
+      if (prior === undefined) delete process.env.AH_BOOTSTRAP_ADMIN_KEY;
+      else process.env.AH_BOOTSTRAP_ADMIN_KEY = prior;
+    });
+    assert.equal((await readFile(join(source.dir, "first-admin.key"), "utf8")).trim(), key);
     const hash = await readFile(join(source.dir, "first-admin.key"));
     const state = JSON.parse(
       await readFile(join(source.dir, "bootstrap.json"), "utf8"),

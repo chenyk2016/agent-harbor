@@ -324,7 +324,10 @@ export async function initialize(
           !(await exists(join(c.dir, "first-admin.key"))),
         "EXISTING_KEYS_REQUIRE_MANUAL_ADOPTION",
       );
-      const token = randomBytes(32).toString("base64url");
+      // This secret belongs only to the initial operator command, not the service environment.
+      const token = process.env.AH_BOOTSTRAP_ADMIN_KEY;
+      requireThat(token, "AH_BOOTSTRAP_ADMIN_KEY_REQUIRED");
+      requireThat(/^[A-Za-z0-9_-]{32,128}$/.test(token), "INVALID_AH_BOOTSTRAP_ADMIN_KEY");
       state = {
         userId,
         modelDigest: digest,
