@@ -135,6 +135,7 @@ export class OpenSandboxResidentProvider implements ResidentProvider {
 
   async create({ task, profile, directory, attemptDirectory, leaseId }: ResidentLaunch) {
     const ref = this.plannedRef(task.attemptId);
+    if (task.hasLocalMcp) await this.docker.requireNativeMcpImage(profile.image);
     const epoch = await this.managerEpoch();
     const bridge = join(attemptDirectory, "bridge");
     await mkdir(bridge, { mode: 0o700 });

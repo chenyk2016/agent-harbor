@@ -97,6 +97,13 @@ export class DockerBackend {
     }
     return [...sessions];
   }
+  async requireNativeMcpImage(image: string) {
+    if (await this.command([
+      "image", "inspect", "--format", '{{ index .Config.Labels "io.agent-harbor.mcp-native" }}', image,
+    ]) !== "1")
+      throw new Error("MCP_NATIVE_RUNTIME_UNSUPPORTED: select a native MCP runtime image");
+  }
+
   /** 创建固定运行环境，同一 attempt 重试复用同名容器；此方法尚不启动进程。 */
   async create(
     task: Task,
@@ -133,19 +140,7 @@ export class DockerBackend {
       throw new Error(
         "EXPERT_RUNTIME_UNSUPPORTED: use an expert-capable runtime image",
       );
-    if (
-      (task.hasLocalMcp || task.mcpProbe) &&
-      (await this.command([
-        "image",
-        "inspect",
-        "--format",
-        '{{ index .Config.Labels "io.agent-harbor.mcp-native" }}',
-        profile.image,
-      ])) !== "1"
-    )
-      throw new Error(
-        "MCP_NATIVE_RUNTIME_UNSUPPORTED: select a native MCP runtime image",
-      );
+    if (task.hasLocalMcp || task.mcpProbe) await this.requireNativeMcpImage(profile.image);
     const name = dockerSessionName(task.attemptId);
     const existing = await this.inspect(name);
     if (existing) return name;

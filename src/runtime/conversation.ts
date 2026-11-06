@@ -1,3 +1,4 @@
+import { isOfflineTextMcp } from "../shared/mcp.js";
 import { prepareMcpStartup, clearStartupCredentials } from "./mcp-startup.js";
 /**
  * 宿主上的连续对话管理。
@@ -317,8 +318,8 @@ export class ResidentConversation implements Conversation {
   }
 
   private requiresDocker() {
-    return Boolean(this.options.expert || this.options.capabilities?.skills.length || this.options.localMcp?.length ||
-      Object.keys(this.options.mcpServers ?? {}).length || this.options.networkDomains?.length);
+    return Boolean(this.options.expert || this.options.capabilities?.skills.length ||
+      this.options.localMcp?.some(launch => !isOfflineTextMcp(launch)) || Object.keys(this.options.mcpServers ?? {}).length || this.options.networkDomains?.length);
   }
 
   /** 只有首轮或环境重建才启动进程，正常后续轮次直接复用管道。 */

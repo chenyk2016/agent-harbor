@@ -19,3 +19,16 @@ export interface McpRuntime {
   networkDomains?: string[];
 }
 export const mcpServerName = (id: string) => "harbor_" + id.replace(/-/g, "");
+
+
+export const offlineTextMcpCommand = [
+  "/usr/local/bin/node",
+  "/opt/harbor-runtime/service/mcp/builtin.js",
+] as const;
+
+/** Only the image's offline, credential-free MCP is qualified on both backends. */
+export function isOfflineTextMcp(launch: LocalMcpLaunch) {
+  return !launch.script && Object.keys(launch.env).length === 0 &&
+    launch.command.length === offlineTextMcpCommand.length &&
+    offlineTextMcpCommand.every((part, index) => part === launch.command[index]);
+}

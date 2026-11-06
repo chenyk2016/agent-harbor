@@ -37,6 +37,8 @@ docker build -f infra/Dockerfile.mcp-native -t agent-harbor:0.6.2 .
 
 ## 管理员本地模板
 
+当服务启用 OpenSandbox Runner 时，内置的无凭据离线文本工具随普通会话迁入该后端。其他 MCP 类型及设置页的「测试连接」继续走原有 Docker 路径。切换保留会话镜像和工作文件，取消本地工具仍确认整个执行环境停止。
+
 默认内置 `text-tools` 提供 `text_stats` 和 `sha256`。也可设置 `AH_MCP_TEMPLATES_FILE` 为管理员 JSON 文件：
 
 ```json

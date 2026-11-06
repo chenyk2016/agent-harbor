@@ -1,5 +1,6 @@
 /** Administrator-owned commands only; users supply declared fields, never command fragments. */
 import { readFile } from "node:fs/promises";
+import { offlineTextMcpCommand } from "../../shared/mcp.js";
 import { secretKeys, validId } from "./scripts.js";
 export interface LocalTemplate {
   id: string;
@@ -15,10 +16,7 @@ export async function loadLocalTemplates(
       {
         id: "text-tools",
         name: "文本工具（离线）",
-        command: [
-          "/usr/local/bin/node",
-          "/opt/harbor-runtime/service/mcp/builtin.js",
-        ],
+        command: [...offlineTextMcpCommand],
         secretKeys: [],
       },
     ];

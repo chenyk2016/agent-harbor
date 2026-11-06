@@ -32,6 +32,6 @@ flowchart LR
 
 - 服务级验证运行 `tests/opensandbox-service-verification.mjs`。需要一次性 Ubuntu、Docker 和已迁移的空 PostgreSQL，以及只允许测试用户重启本虚拟机内 Docker 和 `harbor-runner-qualification` 的权限。测试以真实 Harbor 服务、Claude SDK 和钱包执行，供应商由本地响应替代。
 
-配置范围为单主机普通会话，管理服务持有本机 Docker 权限。受控测试可验证不同租户的会话、文件、凭据与容器网络隔离。execd 与 Runner 共用容器，面对陌生用户任意代码的更强隔离、实际供应商对账及其他宿主和架构仍需独立验收。
+配置范围为单主机普通会话及内置离线文本 MCP，管理服务持有本机 Docker 权限。远程 MCP、自定义本地模板、脚本与设置页独立连通测试仍走 Docker。受控测试可验证不同租户的会话、文件、凭据与容器网络隔离。execd 与 Runner 共用容器，面对陌生用户任意代码的更强隔离、实际供应商对账及其他宿主和架构仍需独立验收。
 
 上游只读根改动追踪 [Issue #1549](https://github.com/opensandbox-group/OpenSandbox/issues/1549) 与 [PR #1590](https://github.com/opensandbox-group/OpenSandbox/pull/1590)。
