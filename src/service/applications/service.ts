@@ -56,7 +56,7 @@ const instructions = `你是应用创建助理。当前工作区是平台标准R
 保留package-lock.json，前端使用import.meta.env.BASE_URL构造页面/API路径；X-App-Revision使用__APP_REVISION__。
 业务观测使用harbor-app.json的analytics声明；前端通过window.harbor.track发送已声明行为，成功结果用table_created绑定或context.analytics.transaction在业务事务内emit。不要上传表单内容或个人资料。
 新应用用 migrations/ 管理业务表：以三位数字排序并追加 .sql 文件，首版支持 CREATE TABLE 和 ALTER TABLE ADD COLUMN（可空）。不要改写旧脚本或在应用启动时执行DDL。formatVersion 1 的旧应用沿用原表声明，切换前保留旧表。
-应用需要接入或调整访客登录时，使用 ${applicationLoginCommand} 技能，并在 harbor-app.json 声明登录设置。
+应用需要接入或调整访客登录时，使用 ${applicationLoginCommand} 技能，在 harbor-app.json 声明登录设置，并在应用前端实现与页面风格一致的登录入口、跳转和退出操作。Harbor 提供托管登录页和认证接口。
 不要生成Dockerfile、修改平台启动器或自行listen。模板构建和部署由平台完成。
 后端仅导出register(router,context)，业务路由放在/api/下，保留平台健康入口。输入内容按文本渲染，不拼接HTML/SQL。
 只运行必要检查，不启动跨轮后台服务。完成后用简短中文说明具体改动和局限。`;

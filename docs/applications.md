@@ -4,7 +4,7 @@
 
 应用观测与运营分析首版见[观测指南](application-observability.md)：通用流量/转化/质量/版本面板、应用事件声明和独立观测数据库。随应用模块迁移初始化，已有应用需在目标环境重新发布。
 
-创建或编辑应用时，可以点「应用登录」或在对话里说「只允许 Google 登录」。内置 Skill 指导 Claude 修改 `harbor-app.json` 的 `auth` 配置，Harbor 按配置构建预览和发布。新应用省略 `auth` 时默认公开。登录方式使用 `"auth": { "mode": "required", "providers": ["email_password", "google"] }`，列表可只选择一种。登录页由 Harbor 托管。「工作台 → 用户」展示当前方式并管理访客账号。已受保护的应用改为 `"auth": { "mode": "public" }` 时，在构建预览或发布时确认开放。
+创建或编辑应用时，可以点「应用登录」或在对话里说「只允许 Google 登录」。内置 Skill 指导 Claude 修改 `harbor-app.json` 的 `auth` 配置，并在应用里实现登录和退出入口。登录页与回跳由 Harbor 托管。新应用省略 `auth` 时默认公开。登录方式使用 `"auth": { "mode": "required", "providers": ["email_password", "google"] }`，列表可只选择一种。「工作台 → 用户」展示当前方式并管理访客账号。已受保护的应用改为 `"auth": { "mode": "public" }` 时，在构建预览或发布时确认开放。
 
 ## 当前可用范围
 

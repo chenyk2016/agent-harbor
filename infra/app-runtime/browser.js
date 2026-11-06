@@ -127,41 +127,6 @@ window.harbor = {
     queue = [];
   },
 };
-/** 在所有登录应用中保留统一入口，包括早期创建、重新构建后启用登录的应用。 */
-async function mountVisitorEntry() {
-  const area = document.createElement("aside");
-  area.setAttribute("aria-label", "应用账号");
-  const link = document.createElement("a");
-  const start = new URL(base + "__harbor/auth/start", location.origin);
-  start.searchParams.set("return", location.pathname + location.search);
-  link.href = start.href;
-  link.textContent = "注册 / 登录";
-  area.append(link);
-  document.body.prepend(area);
-  try {
-    const response = await originalFetch(base + "__harbor/auth/me");
-    if (!response.ok) return;
-    const user = await response.json();
-    if (typeof user.email !== "string") return;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "退出登录";
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      try {
-        const result = await originalFetch(base + "__harbor/auth/logout", { method: "POST" });
-        if (result.ok) {
-          location.reload();
-          return;
-        }
-      } catch {}
-      button.disabled = false;
-      button.textContent = "退出失败，请重试";
-    });
-    area.replaceChildren(document.createTextNode(user.email + " "), button);
-  } catch {}
-}
-
 async function start() {
   try {
     const r = await originalFetch(base + "__harbor/health", {
@@ -169,7 +134,6 @@ async function start() {
     });
     const health = await r.json();
     enabled = health.observationVersion === 1;
-    if (health.visitorAuthVersion === 1) void mountVisitorEntry();
   } catch {
     return;
   }
