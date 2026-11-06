@@ -1,6 +1,6 @@
 # 网页客户端（V7 React）
 
-先按README配置网关、构建并生成开发访问密钥，运行`npm run server`，打开http://127.0.0.1:4318。页面、HTTP与SSE都由这个进程提供。原设计稿保留在`src/clients/web/prototype`，正式应用不再使用示例数据或模拟执行。
+先按README配置网关、构建并生成开发访问密钥，运行`npm run server`，打开http://127.0.0.1:4318。页面、HTTP与SSE都由这个进程提供。现行前端代码位于 `apps/web/`。
 
 ## 使用
 

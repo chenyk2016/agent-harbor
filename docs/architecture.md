@@ -50,7 +50,8 @@ flowchart TD
 | `service/files/` | 文件传输和描述符访问边界，复用身份/归属，不经过SDK |
 | `service/event-stream.ts` | 游标补发、保活及慢连接断开，不控制执行 |
 | `service/recovery.ts` | 汇总目录/数据库/标签，确认停止旧容器，不重放任务 |
-| `clients/` | CLI、共用HTTP/SSE客户端及正式网页 |
+| `clients/` | CLI 和共用 HTTP/SSE 客户端 |
+| `apps/web/` | React 工作台及管理界面 |
 | `runtime/` | 会话锁、状态文件、原生恢复与Runner连接 |
 | `runtime/providers/` | 环境生命周期和 Runner 通信接口。引擎状态无法确认时拒绝继续 |
 | `docker/` | Docker 适配器、固定 CLI 参数、归属检查和停止确认 |
