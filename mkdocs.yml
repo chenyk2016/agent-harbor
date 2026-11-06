@@ -1,0 +1,72 @@
+site_name: Agent Harbor 文档
+site_description: Agent Harbor 自托管安装、工作台使用、应用发布与运维手册
+site_url: !ENV [HARBOR_DOCS_URL, '']
+repo_url: !ENV [HARBOR_DOCS_REPO, '']
+site_dir: var/docs-site
+strict: true
+theme:
+  name: mkdocs
+  locale: zh_CN
+  color_mode: light
+  navigation_depth: 2
+  highlightjs: false
+plugins:
+  - search:
+      lang: en
+      min_search_length: 2
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+      slugify: !!python/name:markdown.extensions.toc.slugify_unicode
+extra_css:
+  - assets/docs.css
+extra_javascript:
+  - assets/docs.js
+hooks:
+  - scripts/docs-pages.py
+validation:
+  links:
+    anchors: warn
+    unrecognized_links: warn
+    absolute_links: warn
+nav:
+  - 首页: index.md
+  - 开始使用:
+      - 本地安装与启动: quickstart.md
+      - 第一个 Agent 任务: first-task.md
+  - 用户指南:
+      - 会话、中断与恢复: session-lifecycle.md
+      - 命令行客户端: cli.md
+      - 工作区与文件: workspace-files.md
+      - 技能与专家: skills.md
+      - WorkBuddy 专家包: workbuddy-experts.md
+      - MCP: mcp.md
+      - 应用创建与部署: applications.md
+      - 应用访客登录: application-login.md
+      - 应用运营观测: application-observability.md
+      - 删除与数据保留: deletion.md
+  - 管理和运维:
+      - 托管部署与恢复: deployment.md
+      - 管理员与身份: identity.md
+      - 管理后台: admin.md
+      - 模型与网关: llm-gateway.md
+      - 额度与计费: wallet.md
+      - 模型与任务观测: llm-observability.md
+      - 故障排查: troubleshooting.md
+  - 技术参考:
+      - 配置与数据目录: configuration.md
+      - HTTP 与 SSE: service.md
+      - 系统架构: architecture.md
+      - 网关策略: llm-baseline.md
+      - SQLite 迁移: migration.md
+      - 安全与漏洞报告: security.md
+      - 原生沙箱策略: seccomp.md
+      - 会话依赖环境: dependency-runtime.md
+      - 网页开发: react-web.md
+  - 参与项目:
+      - 贡献指南: contributing.md
+      - 测试与验收: testing.md
+      - 源码发布: releasing.md
+      - 发布文档站: pages-publishing.md
+      - 许可证: license.md

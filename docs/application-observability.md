@@ -98,6 +98,6 @@ npm run verify:observability
 AH_OBSERVATION_REGRESSION=1 AH_OBSERVATION_KEEP_OPEN=1 npm run verify:observability
 ```
 
-专项验证使用隔离PostgreSQL、真实应用镜像和Caddy，不调用真实模型、不切换既有服务。浏览器验收和公网HTTPS/真实运营验收分开记录。完整设计和后续边界见[技术方案](design/application-observability.md)。
+专项验证使用隔离PostgreSQL、真实应用镜像和Caddy，不调用真实模型、不切换既有服务。浏览器验收和公网HTTPS/真实运营验收分开记录。原始设计保留在仓库的 `docs/design/application-observability.md`。
 
 尚待交付：180天聚合、留存、持久告警确认/恢复工作流、受控A/B、费用账单、完整删除/备份恢复、全量故障与容量验收。当前首版支持小规模受信试用，不能据此承诺生产吞吐或真实运营效果。

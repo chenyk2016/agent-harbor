@@ -1,0 +1,38 @@
+:root {
+  --harbor-accent: #0c6862;
+}
+
+.navbar.bg-primary {
+  background: #143b42 !important;
+}
+
+[data-bs-theme="light"] a {
+  color: var(--harbor-accent);
+}
+
+main, [role="main"] {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+[role="main"] table {
+  display: block;
+  overflow-x: auto;
+  width: fit-content;
+  max-width: 100%;
+}
+
+[role="main"] pre {
+  overflow-x: auto;
+}
+
+.docs-intro {
+  border-inline-start: 0.3rem solid var(--harbor-accent);
+  padding: 0.25rem 1.25rem;
+  margin-block: 1.25rem;
+  font-size: 1.15rem;
+}

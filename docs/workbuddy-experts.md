@@ -61,4 +61,4 @@ WorkBuddy私有连接器的服务地址、账户和授权不能从包内自动�
 
 部署前备份数据库、整个服务数据根（包括连接加密密钥）、私有环境配置，停服迁移并构建新镜像，再在新镜像准备原启用技能。保持旧镜像和旧会话目录。
 
-兼容设计见[完整方案](plans/workbuddy-experts-compatibility.md)。验证按原包/格式/运行/真实业务分层：官方ZIP、源文件、PG事务与用户归属、实际Docker/SDK、MCP和OAuth协议夹具、网页分别核对。公开格式兼容并不意味着复制WorkBuddy的腾讯私有服务、登录态或同一模型效果。
+兼容设计保留在仓库的 `docs/plans/workbuddy-experts-compatibility.md`。验证按原包/格式/运行/真实业务分层：官方ZIP、源文件、PG事务与用户归属、实际Docker/SDK、MCP和OAuth协议夹具、网页分别核对。公开格式兼容并不意味着复制WorkBuddy的腾讯私有服务、登录态或同一模型效果。

@@ -4,7 +4,7 @@ import { readFileSync, lstatSync } from 'node:fs';
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 const roots = new Set(['apps', 'src', 'infra', 'tests', 'examples', 'docs', 'scripts', 'migrations', 'templates', 'LICENSES', '.github']);
-const rootFiles = new Set(['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'LICENSE', 'NOTICE', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.web.json', 'drizzle.config.ts', '.env.example', '.gitignore', '.dockerignore']);
+const rootFiles = new Set(['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'LICENSE', 'NOTICE', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.web.json', 'drizzle.config.ts', 'mkdocs.yml', 'requirements-docs.txt', '.env.example', '.gitignore', '.dockerignore']);
 const findings = [];
 const inspected = new Set();
 const rules = [

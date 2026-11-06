@@ -99,4 +99,4 @@ npm 禁用生命周期脚本；需要编译或自定义安装步骤的包可能�
 - `src/agent/mcp-launcher.ts`：干净环境、srt、安装和 stdio 进程。
 - `src/service/mcp/probe.ts` → `src/agent/mcp-probe.ts`：无模型的原生发现。
 
-`npm test`、`npm run check` 为工程检查；`AH_TEST_DATABASE_URL=... AH_IMAGE=agent-harbor:0.6.2 npm run verify:mcp` 使用实际 Docker/Claude Code 与本地模型夹具验证原生调用、依赖和取消，不等同真实模型或第三方账号验收。目录说明见[资源与缓存](design/resource-layout.md)，设计取舍见[原生 MCP 方案](design/mcp-native-sandbox.md)。
+`npm test`、`npm run check` 为工程检查；`AH_TEST_DATABASE_URL=... AH_IMAGE=agent-harbor:0.6.2 npm run verify:mcp` 使用实际 Docker/Claude Code 与本地模型夹具验证原生调用、依赖和取消，不等同真实模型或第三方账号验收。资源目录与沙箱设计保留在仓库的 `docs/design/resource-layout.md` 与 `docs/design/mcp-native-sandbox.md`。

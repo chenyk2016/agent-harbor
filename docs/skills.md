@@ -53,7 +53,7 @@ description: 检查表格并生成摘要
 }
 ```
 
-Python锁文件使用`包名==版本 --hash=sha256:完整哈希`，包括全部间接依赖；仅接受可用wheel。Node使用完整package-lock v2/v3，所有依赖来自公开npm registry并有SHA256/512完整性摘要。Node声明为`"node": { "manifest": "package.json", "lockFile": "package-lock.json", "lifecycleScripts": "disabled" }`。生成入口的language可用`python`、`node`；无依赖Shell脚本可由Bash直接运行，实际字段以[manifest.ts](../src/service/skills/manifest.ts)校验为准。平台在发布产物的说明中追加稳定入口路径，Python入口自动设置该技能独立的PYTHONPATH，Node在技能自己的node_modules里查找依赖。
+Python锁文件使用`包名==版本 --hash=sha256:完整哈希`，包括全部间接依赖；仅接受可用wheel。Node使用完整package-lock v2/v3，所有依赖来自公开npm registry并有SHA256/512完整性摘要。Node声明为`"node": { "manifest": "package.json", "lockFile": "package-lock.json", "lifecycleScripts": "disabled" }`。生成入口的language可用`python`、`node`；无依赖Shell脚本可由Bash直接运行，实际字段以`src/service/skills/manifest.ts`校验为准。平台在发布产物的说明中追加稳定入口路径，Python入口自动设置该技能独立的PYTHONPATH，Node在技能自己的node_modules里查找依赖。
 
 平台不审查技能正文，不因动态命令、原生frontmatter扩展字段或随包资源目录而拒绝导入。文件原样保留，由Claude解释。技能目录里的文件不会因此变成独立MCP或完整插件。
 

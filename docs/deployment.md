@@ -27,6 +27,18 @@ node --env-file=/srv/harbor-instance/harbor.env dist/src/service/server.js
 
 Linux由Docker bridge实际网关地址提供仅/inference的钱包入口，并为Runner配置host.docker.internal:host-gateway；网页与管理API不暴露到这个入口。它沿用钱包凭据校验。macOS使用容器引擎提供的宿主别名。doctor --runtime实际创建命名空间探针，但不代表完整隔离审计；实际容器到模型入口由acceptance验证。禁止将Docker socket挂给用户任务，服务账号的Docker权限属于宿主高权限，应在专用机器运行。
 
+## 团队 HTTPS 入口
+
+先用回环地址完成 [本地启动与登录](quickstart.md)。在专用服务器上为团队配置一个 HTTPS 域名，将 DNS 指向反向代理。Caddy 与 Harbor 在同一宿主机时可使用以下配置，将示例域名替换为你的域名。
+
+```caddyfile
+harbor.example.com {
+    reverse_proxy 127.0.0.1:4318
+}
+```
+
+在私有 `harbor.env` 中设置 `AH_PUBLIC_ORIGIN=https://harbor.example.com`，与浏览器地址完全一致，再重启 Harbor。开启认证选项前，先从团队网络登录、运行一个短任务并重连，验证 TLS、Cookie 和 SSE 事件。反代需允许长连接并及时转发事件。PostgreSQL、LiteLLM 管理面、Docker API 和内部推理入口仅对各自所需的内部来源开放。配置应用访客时再单独规划认证域与应用域。
+
 ## 管理员与模型初始化
 
 首次执行 `init` 必须通过该命令的进程环境提供 `AH_BOOTSTRAP_ADMIN_KEY`，接受 32 至 128 个字母、数字、下划线或短横线。可以从部署密钥管理器提供高强度随机值，也可以用上面的命令随机生成。缺少或格式不合规时初始化失败，服务也无法以空密钥实例启动。该变量只用于首次初始化，无需写入 `harbor.env`，重启、恢复和重复初始化继续使用已有凭据。
@@ -44,7 +56,7 @@ bootstrap-model.json由部署者提供，0600保存，不进入版本库。例�
 }
 ```
 
-供应商成本用美元/百万Token，内部额度单价用元/百万Token；不得混加或当汇率。成员首次使用前管理员在后台赠送内部额度。首版不接支付，注册/Plus赠送默认为0；既有实例原设置不改。TPM和模型请求并发保持未配置，不自动周期重置预算。模型必须经过工具/流式实测，协议可连通不代表Agent完整兼容。
+供应商成本用美元/百万Token，内部额度单价用元/百万Token；不得混加或当汇率。成员首次使用前管理员在后台赠送内部额度。钱包属于内部账本，公开注册默认关闭。启用工作台自助注册时，新用户一次性获得10元模型额度；已有用户不补发。TPM和模型请求并发保持未配置，不自动周期重置预算。模型必须经过工具/流式实测，协议可连通不代表Agent完整兼容。
 
 ## 免费检查与服务管理
 
@@ -92,7 +104,7 @@ restore校验清单哈希、包版本、空数据根与空数据库，不提供�
 
 ## 发布与限制
 
-`package --image IMAGE --output EMPTY_DIR`先执行既有公开审计并要求干净提交；失败不生成公开包。`--local-only`仅生成带标记的私有验证目录，不包含.git、.env、用户数据、node_modules、SDK二进制。公开历史当前仍需单独处理；不得推送内部旧标签。发布包安装依赖使用锁文件，并需验证来源。Linux CI配置与本机测试、真实供应商和用户验收分别记录，不能互相替代。
+`package --image IMAGE --output EMPTY_DIR`先执行既有公开审计并要求干净提交；失败不生成公开包。`--local-only`仅生成带标记的私有验证目录，不包含.git、.env、用户数据、node_modules、SDK二进制。上传前核对待发布引用的可达历史。发布包安装依赖使用锁文件，并需验证来源。Linux CI配置与本机测试、真实供应商和用户验收分别记录，不能互相替代。
 
 
 ## Linux交付验证环境
