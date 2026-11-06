@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { Controller } from "../../runtime/controller.js";
 import type { SessionManager } from "../session-manager.js";
-import { fail, type ServiceSession } from "../types.js";
+import { fail, isModelProbe, type ServiceSession } from "../types.js";
 import { streamEvents } from "../event-stream.js";
 import { createFileRouter } from "../files/http.js";
 import type { WorkspaceFiles } from "../files/workspace-files.js";
@@ -16,6 +16,7 @@ import { bundleExpertSource } from "../experts/packages.js";
 import type { McpService } from "../mcp/service.js";
 import type { ApplicationService } from "../applications/service.js";
 import type { LlmService } from "../llm/service.js";
+import { modelProbeRouter } from "../llm/setup-probe.js";
 import { ResourceDeletions } from "../deletions/service.js";
 import { deletionRouter } from "../deletions/http.js";
 import {
@@ -55,6 +56,7 @@ export function createSessionRouter(
   const router = Router({ caseSensitive: true });
   const deletions = new ResourceDeletions(manager, controller.store.root, files, applications, llm);
   router.use(deletionRouter(deletions));
+  if (llm) router.use(modelProbeRouter(llm, manager, controller.store, deletions));
   void deletions.resume().catch(() => console.error("Deletion recovery requires retry"));
   // 集合路由：查询列表或创建准备好的会话；尚未登记的目录不对外可见。
   router.get("/sessions", async (request, response) => {
@@ -65,7 +67,7 @@ export function createSessionRouter(
     const after = query.get("after");
     // 删除中的行仍可作本人列表的分页锚点，但不能借此读取其内容。
     const anchor = after ? await manager.store.session(after) : undefined;
-    if (after && (!anchor || anchor.ownerId !== userId || anchor.analysisAppId)) fail(404, "SESSION_NOT_FOUND");
+    if (after && (!anchor || anchor.ownerId !== userId || anchor.analysisAppId || isModelProbe(anchor))) fail(404, "SESSION_NOT_FOUND");
     const sessions =
       query.get("order") === "created"
         ? await manager.store.sessionPage(userId, limit, anchor)

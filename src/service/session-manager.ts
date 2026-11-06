@@ -7,7 +7,7 @@ import { UsageStore } from "./usage/store.js";
 import { sql } from "drizzle-orm";
 import { AnalysisCleanupError } from "../runtime/app-analysis.js";
 import type { AnalysisEnvironment } from "./observability/report-snapshots.js";
-import { activeStatuses, fail, type Message, type MessageStatus, type ServiceSession } from "./types.js";
+import { activeStatuses, fail, isModelProbe, type Message, type MessageStatus, type ServiceSession } from "./types.js";
 
 /** 服务进程内持有的会话资源与异步完成凭据；浏览器断线不会移交或结束这里的执行所有权。 */
 interface LiveSession {
@@ -27,7 +27,7 @@ export class SessionManager {
   onUserClose?: (userId: string) => Promise<void>;
   onRoundCancel?: (sessionId:string)=>Promise<void>;
   onEnvironmentClose?: (sessionId:string)=>Promise<void>;
-  modelSelection?: (userId:string, deploymentId?:string)=>Promise<import("../shared/llm.js").ModelSnapshot>;
+  modelSelection?: (userId:string, deploymentId?:string, setupTest?:boolean)=>Promise<import("../shared/llm.js").ModelSnapshot>;
   modelConnection?: (session:ServiceSession)=>Promise<import("../shared/llm.js").GatewayConnection>;
   runtimeConnections?: (session:ServiceSession)=>Promise<import("../shared/mcp.js").McpRuntime>;
   analysisScope?: (owner: string, appId: string) => Promise<void>;
@@ -57,9 +57,9 @@ export class SessionManager {
   /** 表示本进程是否能继续接收执行；不代表模型供应商或每个既有容器已通过健康检查。 */
   get ready() { return !this.stopping && !this.storageUnavailable && !this.recoveryFailed; }
   /** 读取用户拥有且未被删除流程占用的会话，作为管理和文件入口的归属检查。 */
-  async owned(userId: string, id: string, analysis = false): Promise<ServiceSession> {
+  async owned(userId: string, id: string, analysis = false, modelProbe = false): Promise<ServiceSession> {
     const session = await this.store.session(id);
-    if (!session || session.ownerId !== userId || !!session.analysisAppId !== analysis) fail(404, "SESSION_NOT_FOUND");
+    if (!session || session.ownerId !== userId || !!session.analysisAppId !== analysis || isModelProbe(session) !== modelProbe) fail(404, "SESSION_NOT_FOUND");
     await this.deletions?.guardSession(id);
     return session;
   }
@@ -116,7 +116,7 @@ export class SessionManager {
     });
   }
   /** 先预约会话额度，在锁外准备模板等文件，再持久化模型、expert 和技能快照；失败也释放预约。 */
-  async createPrepared(userId: string, title: string, id: string, prepare: () => Promise<void>, creation: { model?: import("../shared/llm.js").ModelSnapshot; deploymentId?: string; expert?: import("../shared/experts.js").ExpertSnapshot; snapshot?: import("../shared/skills.js").CapabilitySnapshot; requestId?: string; hash?: string } = {}) {
+  async createPrepared(userId: string, title: string, id: string, prepare: () => Promise<void>, creation: { model?: import("../shared/llm.js").ModelSnapshot; deploymentId?: string; expert?: import("../shared/experts.js").ExpertSnapshot; snapshot?: import("../shared/skills.js").CapabilitySnapshot; requestId?: string; hash?: string; modelProbe?: boolean } = {}) {
     await this.withAdmission(async () => {
       this.writable(); await this.identity.require(userId);
       const pending = this.creations.get(userId) ?? 0;
@@ -124,7 +124,7 @@ export class SessionManager {
       this.creations.set(userId, pending + 1);
     });
     try {
-      if(this.modelSelection) creation.model=await this.modelSelection(userId,creation.deploymentId);
+      if(this.modelSelection) creation.model=await this.modelSelection(userId,creation.deploymentId,creation.modelProbe);
       else if(creation.deploymentId) fail(409,"LLM_DISABLED");
       await prepare();
       return await this.withAdmission(async () => {
@@ -200,9 +200,9 @@ export class SessionManager {
   }
 
   /** 去重先于忙判断；最终并发窗口由数据库行锁和唯一约束兜住。 */
-  async submit(userId: string, sessionId: string, clientMessageId: string, text: string, deploymentId?: string, analysis = false) {
+  async submit(userId: string, sessionId: string, clientMessageId: string, text: string, deploymentId?: string, analysis = false, modelProbe = false) {
     return this.withAdmission(async () => {
-      const session = await this.owned(userId, sessionId, analysis);
+      const session = await this.owned(userId, sessionId, analysis, modelProbe);
       if (session.analysisAppId) {
         if (!this.analysisScope || !this.analysisRun) fail(503, "APPLICATION_ANALYSIS_UNAVAILABLE");
         await this.analysisScope(userId, session.analysisAppId);
@@ -228,7 +228,7 @@ export class SessionManager {
       await this.applicationWriteGuard?.(sessionId, { id: clientMessageId, text });
       // 稳定别名：每轮都按部署的当前指针解析版本；消息快照记录本轮实际版本。
       const model = this.modelSelection
-        ? await this.modelSelection(userId, deploymentId ?? session.modelSnapshot?.deploymentId)
+        ? await this.modelSelection(userId, deploymentId ?? session.modelSnapshot?.deploymentId, modelProbe)
         : undefined;
       if (deploymentId && !this.modelSelection) fail(409, "LLM_DISABLED");
       if (model && model.deploymentId !== session.modelSnapshot?.deploymentId && existing?.backgroundTasks?.size)
@@ -292,7 +292,8 @@ export class SessionManager {
         await this.store.transition(message.id, "succeeded", { environment: "closed" });
         return;
       }
-      const runtime=await this.runtimeConnections?.(currentSession);
+      const probe = isModelProbe(currentSession);
+      const runtime = probe ? undefined : await this.runtimeConnections?.(currentSession);
       const mcpServers=runtime?.mcpServers,networkDomains=runtime?.networkDomains;
       const connectionDigest=createHash('sha256').update(JSON.stringify({runtime,gateway})).digest('hex');
       // 凭据更新或连接被撤回时不能继续用旧进程的MCP配置。
@@ -319,7 +320,7 @@ export class SessionManager {
         return;
       }
       await this.store.transition(message.id, "running");
-      const result = await live.conversation.run(message.text, undefined, abort.signal, { attemptId: message.id });
+      const result = await live.conversation.run(message.text, undefined, abort.signal, { attemptId: message.id, modelProbe: probe });
       if (this.storageUnavailable) return;
       const status: MessageStatus = result.status === "reconciling" ? "reconciling"
         : result.status === "succeeded" ? "succeeded" : result.status === "cancelled" ? "cancelled" : "failed";

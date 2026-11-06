@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import type { Database, Tx } from "./db/client.js";
 import { uniqueViolation } from "./db/client.js";
 import { events, messages, sessions, users, monthlyMessageUsage } from "./db/schema/index.js";
-import { activeStatuses, fail, type ServiceSession, type Message, type MessageStatus, type ServiceEvent, type Environment } from "./types.js";
+import { activeStatuses, fail, modelProbePrefix, type ServiceSession, type Message, type MessageStatus, type ServiceEvent, type Environment } from "./types.js";
 
 import { messagePeriod } from "./limits/policy.js";
 import { lockDeploymentForUse } from "./llm/deletion.js";
@@ -44,7 +44,7 @@ export class ServiceStore {
   async sessions(ownerId?: string, limit = 100, includeAnalysis = true) {
     const rows = ownerId === undefined
       ? await this.db.select().from(sessions).orderBy(desc(sessions.updatedAt))
-      : await this.db.select().from(sessions).where(and(eq(sessions.ownerId, ownerId), includeAnalysis ? undefined : sql`${sessions.analysisAppId} IS NULL`)).orderBy(desc(sessions.updatedAt)).limit(limit);
+      : await this.db.select().from(sessions).where(and(eq(sessions.ownerId, ownerId), includeAnalysis ? undefined : sql`${sessions.analysisAppId} IS NULL AND coalesce(${sessions.creationRequestId}, '') NOT LIKE ${modelProbePrefix + "%"}`)).orderBy(desc(sessions.updatedAt)).limit(limit);
     return rows as ServiceSession[];
   }
   /** 网页全量列表按不会随执行变化的创建时间分页；展示时再按最近更新排序。 */
@@ -55,9 +55,13 @@ export class ServiceStore {
         and(eq(sessions.createdAt, after.createdAt), sql`${sessions.id} < ${after.id}`),
       ))
       : eq(sessions.ownerId, ownerId);
-    const rows = await this.db.select().from(sessions).where(and(where, sql`${sessions.analysisAppId} IS NULL`))
+    const rows = await this.db.select().from(sessions).where(and(where, sql`${sessions.analysisAppId} IS NULL AND coalesce(${sessions.creationRequestId}, '') NOT LIKE ${modelProbePrefix + "%"}`))
       .orderBy(desc(sessions.createdAt), desc(sessions.id)).limit(limit);
     return rows as ServiceSession[];
+  }
+  async modelProbeSessions() {
+    return await this.db.select({ id: sessions.id, ownerId: sessions.ownerId }).from(sessions)
+      .where(sql`${sessions.creationRequestId} LIKE ${modelProbePrefix + "%"}`);
   }
   async analysisSessions(appId: string) {
     return await this.db.select().from(sessions).where(eq(sessions.analysisAppId, appId)) as ServiceSession[];

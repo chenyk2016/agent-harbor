@@ -37,7 +37,7 @@ import {
   Tr,
 } from "@chakra-ui/react";
 import { Archive, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2, X } from "lucide-react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useAdmin } from "./context.js";
 import { ChangeValues } from "./AdminData.js";
 import { ModelDeletionDialog, type ModelDeletionTarget } from "./ModelDeletionDialog.js";
@@ -234,6 +234,7 @@ export function AdminModels() {
       onRetry={() => refresh((value) => value + 1)}
       actions={
         <HStack spacing={2} flexWrap="wrap">
+          <Button as={Link} to="/models/setup" size="sm" variant="outline">快速接入</Button>
           <Button
             size="sm"
             variant="outline"
@@ -411,6 +412,7 @@ export function AdminModels() {
                 <Pill tone={deployment.enabled ? "teal" : "neutral"}>
                   {deployment.enabled ? "启用" : "停用"}
                 </Pill>
+                {deployment.setupPending && <Pill tone="amber">接入测试待完成</Pill>}
                 {!deployment.price && <Pill tone="amber">未定价</Pill>}
                 {costPolicyRequired && deployment.costMissing && <Pill tone="amber">未配成本</Pill>}
                 <Text fontSize="10.5px" color="muted">
@@ -1626,7 +1628,7 @@ function DeploymentModal({
           setBusy(true);
           setError("");
           void api
-            .request("/admin/llm/deployments", "POST", {
+            .request<AdminDeploymentDetail>("/admin/llm/deployments", "POST", {
               providerId,
               name,
               description,
@@ -1637,8 +1639,9 @@ function DeploymentModal({
               ...(priced ? { price } : {}),
               ...(costStarted ? { cost } : {}),
             })
-            .then(() => {
-              notify("模型已创建并同步");
+            .then((detail) => {
+              const current = detail.versions.find((item) => item.id === detail.deployment.currentVersionId);
+              notify(current?.state === "ready" ? "模型已创建并同步" : "模型已保存，网关同步待核对");
               onClose();
               onSaved();
             })

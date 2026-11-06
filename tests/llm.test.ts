@@ -17,6 +17,8 @@ import { SessionManager } from "../src/service/session-manager.js";
 import { createApi } from "../src/service/http-api.js";
 import { tokenHash } from "../src/service/auth.js";
 import type { GatewayConnection } from "../src/shared/llm.js";
+import { modelProbeEvidence } from "../src/service/llm/setup-probe.js";
+import type { ServiceEvent } from "../src/service/types.js";
 
 test("LLM: deployment versions, scoped catalogs, per-message choice, key lifecycle and restart", async () => {
   const database = await testDatabase(),
@@ -653,6 +655,35 @@ test("LLM: deployment versions, scoped catalogs, per-message choice, key lifecyc
     assert(!afterDeletion.providers.some(row => row.id === retiringProvider.id));
     assert(!afterDeletion.deployments.some(row => row.id === retiringId));
 
+    // First-model retries must keep one provider/model and expose the tested version only.
+    const providerSetupPath = "/admin/llm/setup/providers/" + randomUUID();
+    const providerInput = { name: "Setup provider", apiBase: url, format: "openai_chat", apiKey: "fixture-upstream-secret" };
+    assert.equal((await api(providerSetupPath, "PUT", providerInput, "b")).status, 403);
+    const setupProvider = await (await api(providerSetupPath, "PUT", providerInput)).json();
+    const setupProviderRetry = await (await api(providerSetupPath, "PUT", providerInput)).json();
+    assert.equal(setupProvider.id, setupProviderRetry.id);
+    assert(!JSON.stringify(setupProviderRetry).includes(providerInput.apiKey));
+    assert.equal((await api(providerSetupPath, "PUT", { ...providerInput, apiKey: "different" })).status, 409);
+
+    const setupPath = "/admin/llm/setup/models/" + randomUUID();
+    const setupInput = { providerId: setupProvider.id, name: "Setup model", upstreamModel: "fixture-a", allowedUsers: [] };
+    failModelUpdate = true;
+    const setupModel = await (await api(setupPath, "PUT", setupInput)).json();
+    assert.equal(setupModel.versions[0].state, "pending");
+    failModelUpdate = false;
+    const modelRetry = await (await api(setupPath, "PUT", setupInput)).json();
+    const { id: setupModelId, currentVersionId: setupVersion } = modelRetry.deployment;
+    assert.equal(setupModelId, setupModel.deployment.id);
+    assert.equal(modelRetry.versions.length, 1);
+    assert.deepEqual(modelRetry.deployment.allowedUsers, ["a"]);
+    await service.syncDeployment(setupModelId);
+    assert(!(await service.catalog("a")).models.some(model => model.id === setupModelId));
+    await assert.rejects(service.select("a", setupModelId), /MODEL_SETUP_PENDING/);
+    await assert.rejects(service.completeSetup(setupModelId, randomUUID(), "a"), /MODEL_PROBE_VERSION_CHANGED/);
+    await service.completeSetup(setupModelId, setupVersion, "a");
+    assert((await service.catalog("a")).models.some(model => model.id === setupModelId));
+    assert(!(await service.catalog("b")).models.some(model => model.id === setupModelId));
+
     const restarted = new LlmService(database.db, root, {
       managementUrl: url,
       inferenceUrl: url,
@@ -669,4 +700,18 @@ test("LLM: deployment versions, scoped catalogs, per-message choice, key lifecyc
     await database.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+
+test("model setup requires the matching native Read event and the streamed file value", () => {
+  const event = (eventId: number, type: string, payload: Record<string, unknown>): ServiceEvent =>
+    ({ sessionId: "test", messageId: "test", eventId, type, payload });
+  const start = event(1, "tool.started", { name: "Read", toolUseId: "one", detail: "/workspace/harbor-model-check.txt" });
+  const finish = event(2, "tool.finished", { name: "Read", toolUseId: "one" });
+  const text = event(3, "assistant.text.delta", { text: "check-value" });
+  assert.deepEqual(modelProbeEvidence([text], "check-value"), { tool: false, stream: false });
+  assert.deepEqual(modelProbeEvidence([start, finish], "check-value"), { tool: true, stream: false });
+  assert.deepEqual(modelProbeEvidence([start, finish, text], "check-value"), { tool: true, stream: true });
+  assert.deepEqual(modelProbeEvidence([start, { ...finish, payload: { name: "Read", toolUseId: "other" } }, text], "check-value"),
+    { tool: false, stream: false });
 });

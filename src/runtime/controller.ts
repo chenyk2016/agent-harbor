@@ -39,7 +39,7 @@ export interface ConversationOptions {
   onRuntimeNotice?: (notice: RuntimeNotice) => Promise<void>;
 }
 /** 单轮执行附加标识；attemptId 可由服务消息编号指定，以便关联产品消息和容器事件。 */
-export interface RunOptions { attemptId?: string }
+export interface RunOptions { attemptId?: string; modelProbe?: boolean }
 
 /** 服务层持有的对话资源接口；run 执行一轮，terminate 停止环境，close 负责完整关闭和资源释放。 */
 export interface Conversation {

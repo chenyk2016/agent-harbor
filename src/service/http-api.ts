@@ -86,13 +86,13 @@ export function createApi(
     };
 
   if (llm) {
-    manager.modelSelection = async (user, id) => {
+    manager.modelSelection = async (user, id, setupTest) => {
       if (walletEnabled) {
         const balance = await wallet.summary(user);
         if (!llm.settings.policy && balance.reserved > 0) fail(429, "WALLET_BUSY");
         if (balance.available <= 0) fail(402, "INSUFFICIENT_BALANCE");
       }
-      return llm.select(user, id);
+      return llm.select(user, id, setupTest);
     };
     manager.modelConnection = (session) => llm.runtime(session);
     const closeEnvironment = manager.onEnvironmentClose;

@@ -9,12 +9,14 @@ export function ModelPicker({
   onChange,
   compact = false,
   inline = false,
+  onCatalog,
 }: {
   api: BrowserApi;
   value: string;
   onChange: (value: string) => void;
   compact?: boolean;
   inline?: boolean;
+  onCatalog?: (catalog: ModelCatalog) => void;
 }) {
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const [error, setError] = useState(false);
@@ -23,7 +25,10 @@ export function ModelPicker({
     void api
       .request<ModelCatalog>("/llm/models")
       .then((v) => {
-        if (alive) setCatalog(v);
+        if (alive) {
+          setCatalog(v);
+          onCatalog?.(v);
+        }
       })
       .catch(() => {
         if (alive) setError(true);
@@ -31,7 +36,7 @@ export function ModelPicker({
     return () => {
       alive = false;
     };
-  }, [api]);
+  }, [api, onCatalog]);
   if (catalog && !catalog.enabled) return null;
   return (
     <FormControl>

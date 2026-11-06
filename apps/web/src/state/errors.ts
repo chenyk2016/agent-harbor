@@ -17,6 +17,7 @@ export function explain(error: unknown) {
       MCP_SCRIPT_NOT_FOUND: "找不到该脚本，或它不属于当前用户。",
       MCP_REVIEW_REQUIRED: "旧版连接需要重新确认后才能启用。",
       MODEL_NOT_FOUND: "没有权限使用这个模型，或模型不存在。",
+      MODEL_SETUP_PENDING: "这个模型还在接入测试，通过后才能用于对话。",
       MODEL_UNAVAILABLE: "模型已停用或尚未同步，请选择其他模型。",
       MODEL_BACKGROUND_BUSY: "后台任务仍在运行，请等待结束或关闭环境后切换模型。",
       MODEL_KEY_UNCONFIRMED: "模型路由尚未确认，本条消息未发送给模型。请重新查询后重试。",

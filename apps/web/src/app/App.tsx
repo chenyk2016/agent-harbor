@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Box, Button, Flex, Spinner, Text, useToast } from "@chakra-ui/react";
 import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { ConversationPage, HomePage } from "./route-pages.js";
@@ -26,6 +26,7 @@ import { AdminOperationsPage } from "../features/admin/AdminOperations.js";
 import { AdminActivity } from "../features/admin/AdminActivity.js";
 import { AdminUsage } from "../features/admin/AdminUsage.js";
 import { AdminAudit } from "../features/admin/AdminAudit.js";
+const ModelSetup = lazy(() => import("../features/llm/ModelSetup.js").then(module => ({ default: module.ModelSetup })));
 const api = new BrowserApi();
 export function App() {
   const navigate = useNavigate();
@@ -152,6 +153,7 @@ export function App() {
         <Route path="experts/new" element={<ExpertRoute />} />
         <Route path="experts/:expertId" element={<ExpertRoute />} />
         <Route path="models" element={<ModelsPage />} />
+        <Route path="models/setup" element={<Suspense fallback={<Spinner m={8} />}><ModelSetup /></Suspense>} />
         <Route path="mcp" element={<McpPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="applications/:appId" element={<ApplicationRoute />} />

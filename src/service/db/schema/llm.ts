@@ -38,6 +38,7 @@ export const llmDeployments = pgTable("llm_deployments", {
   description: text("description").notNull(),
   currentVersionId: text("currentVersionId").notNull(),
   enabled: boolean("enabled").notNull(),
+  setupPending: boolean("setupPending").notNull().default(false),
   allowedUsers: jsonb("allowedUsers").$type<string[]>().notNull(),
   archivedAt: bigint("archivedAt", { mode: "number" }),
   deletionState: text("deletionState").$type<"deleting" | "deleted">(),

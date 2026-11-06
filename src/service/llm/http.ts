@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { jsonBody, jsonInput, parameter, principal } from "../http/shared.js";
 import { fail } from "../types.js";
+import { requireId } from "../skills/service.js";
 import type { LlmService } from "./service.js";
 import { providerPresets } from "../../shared/provider-presets.js";
 export function createLlmRouter(
@@ -38,6 +39,14 @@ export function createLlmRouter(
   });
   router.get("/admin/llm", async (_req, res) => res.json(await service!.adminOverview()));
   router.get("/admin/llm/presets", async (_req, res) => res.json({ presets: providerPresets }));
+  router.put("/admin/llm/setup/providers/:id", ...jsonBody(), async (req, res) =>
+    res.json(await service!.addProvider(jsonInput(req), principal(res).userId, requireId(parameter(req, "id")))),
+  );
+  router.put("/admin/llm/setup/models/:id", ...jsonBody(), async (req, res) =>
+    res.json(await service!.createDeployment(
+      { ...jsonInput(req), tools: true, streaming: true }, principal(res).userId, requireId(parameter(req, "id")),
+    )),
+  );
   router.get("/admin/llm/deployments/:id", async (req, res) =>
     res.json(await service!.deploymentDetail(parameter(req, "id"))),
   );

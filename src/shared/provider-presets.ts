@@ -85,7 +85,7 @@ export const providerPresets: ProviderPreset[] = [
   {
     id: "deepseek", name: "DeepSeek", group: "国内", format: "openai_chat",
     apiBase: "https://api.deepseek.com/v1", docsUrl: "https://api-docs.deepseek.com",
-    models: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }],
+    models: [{ id: "deepseek-flash", name: "DeepSeek Flash" }, { id: "deepseek-v4-pro", name: "DeepSeek Pro" }],
     discovery: { path: "/models", auth: "bearer" },
   },
   {

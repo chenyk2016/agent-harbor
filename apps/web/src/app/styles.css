@@ -224,6 +224,9 @@ body {
   overflow: hidden;
   z-index: 1600;
 }
+.ah-select-viewport {
+  max-height: min(320px, calc(var(--radix-select-content-available-height, 320px) - 10px));
+}
 .ah-select-item {
   display: flex;
   align-items: center;

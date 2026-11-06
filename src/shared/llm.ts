@@ -32,3 +32,16 @@ export interface ModelCatalog {
   defaultModelId: string | null;
   admin: boolean;
 }
+
+/** Public progress contains only check results and a stable error code. */
+export interface ModelProbeStatus {
+  id: string;
+  deploymentId: string;
+  versionId?: string;
+  status: "running" | "passed" | "failed";
+  synced: boolean;
+  tool: boolean;
+  stream: boolean;
+  durationMs?: number;
+  error?: string;
+}

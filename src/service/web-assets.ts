@@ -22,6 +22,7 @@ export async function serveWeb(
     /^\/settings\/(?:account|keys|appearance|about)\/?$/.test(path) ||
     path === "/settings" ||
     path === "/models" ||
+    path === "/models/setup" ||
     path === "/mcp";
   const file = page
     ? "index.html"
@@ -80,6 +81,7 @@ export function createWebRouter(visitor?: { workbenchOrigin?: string; appDomain:
     "/settings",
     "/mcp",
     "/models",
+    "/models/setup",
     "/sessions",
     "/sessions/:id",
     "/skills",

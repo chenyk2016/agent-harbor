@@ -19,10 +19,11 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { ApiError } from "../../../../src/clients/service-client.js";
 import { useWorkbench } from "../app/workbench-context.js";
 import { ApplicationLoginSkill, applicationRequirement } from "./applications/ApplicationLoginSkill.js";
+import type { ModelCatalog } from "../../../../src/shared/llm.js";
 import { ModelPicker } from "./llm/ModelPicker.js";
 import { explain } from "../state/errors.js";
 import { draftTitle } from "../state/workspace.js";
@@ -48,6 +49,7 @@ export function NewEntry() {
   const [mode, setMode] = useState<Mode>(queryMode);
   const [text, setText] = useState("");
   const [modelId, setModelId] = useState("");
+  const [catalog, setCatalog] = useState<ModelCatalog>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [appState, setAppState] = useState<AppState>("loading");
@@ -100,8 +102,8 @@ export function NewEntry() {
   }, [text, mode]);
 
   const appReady = appState === "allowed";
-  const unavailable =
-    mode === "app" && !appReady;
+  const needsModel = !!(catalog?.enabled && !catalog.defaultModelId);
+  const unavailable = needsModel || (mode === "app" && !appReady);
   const appReason =
     appState === "denied"
       ? "当前账号没有创建应用的权限，请联系管理员。"
@@ -207,6 +209,20 @@ export function NewEntry() {
             ? "描述一个目标，Agent 会在独立工作区里拆解并推进，过程和产出文件都可检查。"
             : "用一句话描述你要的应用，Agent 会生成并打开编辑页，继续完善、预览和发布。"}
         </Text>
+        {needsModel && (
+          <Alert status="info" borderRadius="lg" mt={5} alignItems="flex-start">
+            <AlertIcon mt={0.5} />
+            <Box flex="1" minW={0}>
+              <Text fontWeight={650}>{catalog?.admin ? "接入第一个模型" : "暂无可用模型"}</Text>
+              <Text fontSize="sm" mt={1}>
+                {catalog?.admin
+                  ? "准备一个供应商的 API Key，接入并测试通过后就可以开始对话。"
+                  : "请联系管理员开通模型或为你授权。"}
+              </Text>
+              {catalog?.admin && <Button as={Link} to="/models/setup" size="sm" mt={3}>接入模型</Button>}
+            </Box>
+          </Alert>
+        )}
 
         <HStack
           spacing={1}
@@ -322,6 +338,7 @@ export function NewEntry() {
               flexShrink={0}
             >
               <ModelPicker
+                onCatalog={setCatalog}
                 api={api}
                 value={modelId}
                 onChange={(value) => {

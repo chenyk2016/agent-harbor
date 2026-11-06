@@ -16,6 +16,11 @@ export interface ServiceSession {
   creationRequestId?: string | null; creationRequestHash?: string | null;
   environment: Environment; lastMessageId: string | null; lastEventId: number;
 }
+/** Only server-created test sessions use a non-UUID creation request identifier. */
+export const modelProbePrefix = "model-probe:";
+export const isModelProbe = (session: ServiceSession) =>
+  session.creationRequestId?.startsWith(modelProbePrefix) === true;
+
 /** 一次已接收的用户需求及执行结果；clientMessageId 用于重试去重，模型快照归属于该消息。 */
 export interface Message {
   id: string; sessionId: string; clientMessageId: string; text: string;

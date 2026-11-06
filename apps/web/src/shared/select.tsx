@@ -66,7 +66,7 @@ export function Select({
           className="ah-select-content"
           style={{ minWidth: "var(--radix-select-trigger-width)" }}
         >
-          <SelectPrimitive.Viewport>
+          <SelectPrimitive.Viewport className="ah-select-viewport">
             {options.map((option) => (
               <SelectPrimitive.Item
                 key={option.value}

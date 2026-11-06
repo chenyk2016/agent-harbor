@@ -279,9 +279,9 @@ export class ResidentConversation implements Conversation {
       prompt,
       model: this.options.gateway?.model ?? this.controller.profile.model,
       resumeId: previous.sdkSessionId,
-      maxTurns: this.controller.profile.maxTurns || undefined,
+      maxTurns: options.modelProbe ? Math.min(this.controller.profile.maxTurns || 3, 3) : this.controller.profile.maxTurns || undefined,
       maxBudgetUsd: this.controller.profile.maxBudgetUsd || undefined,
-      timeoutMs: this.controller.profile.timeoutMs,
+      timeoutMs: options.modelProbe ? Math.min(this.controller.profile.timeoutMs || 60_000, 60_000) : this.controller.profile.timeoutMs,
     };
     const directory = join(this.directory, "attempts", task.attemptId);
     await mkdir(directory, { mode: 0o755 });

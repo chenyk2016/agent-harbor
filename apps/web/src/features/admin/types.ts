@@ -107,6 +107,7 @@ export interface AdminDeploymentSummary {
   description: string;
   currentVersionId: string;
   enabled: boolean;
+  setupPending?: boolean;
   allowedUsers: string[];
   archivedAt: number | null;
   deletionState?: "deleting" | null;
@@ -128,6 +129,7 @@ export interface AdminDeploymentRecord {
   description: string;
   currentVersionId: string;
   enabled: boolean;
+  setupPending?: boolean;
   allowedUsers: string[];
   archivedAt: number | null;
   deletionState?: "deleting" | null;

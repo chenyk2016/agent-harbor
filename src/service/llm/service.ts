@@ -299,7 +299,7 @@ export class LlmService {
           .reduce((max, secret) => Math.max(max, secret.version), 0) || null,
     }));
   }
-  async addProvider(input: Record<string, unknown>, actor: string) {
+  async addProvider(input: Record<string, unknown>, actor: string, setupId?: string) {
     const name = text(input.name),
       apiBase = text(input.apiBase, 2000),
       format = text(input.format),
@@ -319,7 +319,7 @@ export class LlmService {
     )
       fail(400, "INVALID_MODEL_URL");
     if (!formats.includes(format)) fail(400, "INVALID_MODEL_FORMAT");
-    const id = randomUUID(),
+    const id = setupId ?? randomUUID(),
       now = Date.now();
     const provider = {
       id,
@@ -330,13 +330,28 @@ export class LlmService {
     };
     const sealed = await this.secrets.seal({ apiKey });
     // 安装中断时供应商与首个凭据必须同生同灭，不能留下无凭据供应商。
-    await this.db.transaction(async tx => {
+    const created = await this.db.transaction(async tx => {
+      if (setupId) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${"llm-setup-provider:" + id}, 0))`);
+        const [previous] = await tx.select().from(providers).where(eq(providers.id, id));
+        if (previous) {
+          const [active] = await tx.select().from(secrets)
+            .where(and(eq(secrets.providerId, id), isNull(secrets.retiredAt)))
+            .orderBy(desc(secrets.version)).limit(1);
+          if (previous.deletedAt || previous.name !== name || previous.format !== format ||
+              previous.apiBase !== provider.apiBase || !active ||
+              (await this.secrets.open(active.secret)).apiKey !== apiKey)
+            fail(409, "REQUEST_ID_CONFLICT");
+          return { ...previous, secretVersion: active.version };
+        }
+      }
       await tx.insert(providers).values(provider);
       await tx.insert(secrets).values({
         id: randomUUID(), providerId: id, version: 1, secret: sealed,
         createdAt: now, retiredAt: null,
       });
     });
+    if (created) return created;
     await this.record(actor, "provider.create", id, null, { name, apiBase, format });
     return { ...provider, secretVersion: 1 };
   }
@@ -604,7 +619,7 @@ export class LlmService {
     const providerRows = await this.db.select().from(providers);
     const options: ModelOption[] = [];
     for (const deployment of rows) {
-      if (!deployment.enabled) continue;
+      if (!deployment.enabled || deployment.setupPending) continue;
       if (deployment.allowedUsers.length && !deployment.allowedUsers.includes(user)) continue;
       const version = modelRows.find(
         (row) => row.id === deployment.currentVersionId && row.deploymentId === deployment.id,
@@ -636,17 +651,21 @@ export class LlmService {
   }
   async setDefault(user: string, value: unknown) {
     const id = value === null ? null : text(value);
-    if (id) await this.allowedVersion(user, id);
+    if (id) {
+      const { deployment } = await this.allowedVersion(user, id);
+      if (deployment.setupPending) fail(409, "MODEL_SETUP_PENDING");
+    }
     await this.db.transaction(async (tx) => {
       if (id) await lockDeploymentForUse(tx, id);
       await tx.insert(preferences).values({ ownerId: user, deploymentId: id })
         .onConflictDoUpdate({ target: preferences.ownerId, set: { deploymentId: id } });
     });
   }
-  async select(user: string, requested?: string): Promise<ModelSnapshot> {
+  async select(user: string, requested?: string, setupTest = false): Promise<ModelSnapshot> {
     const id = requested ?? (await this.catalog(user)).defaultModelId;
     if (!id) fail(409, "NO_AVAILABLE_MODEL");
     const { deployment, version, provider } = await this.allowedVersion(user, id);
+    if (deployment.setupPending && !setupTest) fail(409, "MODEL_SETUP_PENDING");
     if (this.settings.walletProxyUrl && !(await this.currentPrice(deployment.id)))
       fail(409, "PRICE_REQUIRED");
     return {
@@ -658,7 +677,7 @@ export class LlmService {
       routeName: version.routeName,
     };
   }
-  async createDeployment(input: Record<string, unknown>, actor: string) {
+  async createDeployment(input: Record<string, unknown>, actor: string, setupId?: string) {
     const name = text(input.name),
       description = optionalText(input.description),
       providerId = text(input.providerId),
@@ -666,17 +685,30 @@ export class LlmService {
     if (!/^[a-zA-Z0-9_.:/@-]+$/.test(upstreamModel)) fail(400, "INVALID_MODEL_INPUT");
     if (typeof input.tools !== "boolean" || typeof input.streaming !== "boolean")
       fail(400, "INVALID_MODEL_INPUT");
-    const allowedUsers = this.allowedUsers(input.allowedUsers);
+    const allowedUsers = setupId ? [actor] : this.allowedUsers(input.allowedUsers);
     const provider = await this.providerRow(providerId);
     const price = input.price === undefined ? undefined : parsePrice(input.price);
     const cost = input.cost === undefined ? undefined : this.normalizedCost(input.cost);
-    const deploymentId = randomUUID(),
+    const deploymentId = setupId ?? randomUUID(),
       versionId = randomUUID(),
       now = Date.now();
     const routeName = `ah-mv-${versionId}`;
     const params = this.object(input.params, "params");
     const capabilities = this.object(input.capabilities, "capabilities");
-    await this.db.transaction(async (tx) => {
+    const created = await this.db.transaction(async (tx) => {
+      if (setupId) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${"llm-setup-model:" + deploymentId}, 0))`);
+        const [previous] = await tx.select().from(deployments).where(eq(deployments.id, deploymentId));
+        if (previous) {
+          const [version] = await tx.select().from(versions).where(eq(versions.id, previous.currentVersionId));
+          if (previous.archivedAt || previous.deletionState || previous.name !== name ||
+              version?.createdBy !== actor || version.providerId !== providerId ||
+              version.upstreamModel !== upstreamModel)
+            fail(409, "REQUEST_ID_CONFLICT");
+          return false;
+        }
+        if (this.settings.walletProxyUrl && !price) fail(409, "PRICE_REQUIRED");
+      }
       await lockProviderForUse(tx, providerId);
       await tx.insert(versions).values({
         id: versionId,
@@ -700,6 +732,7 @@ export class LlmService {
         description,
         currentVersionId: versionId,
         enabled: true,
+        setupPending: !!setupId,
         allowedUsers,
         archivedAt: null,
         createdAt: now,
@@ -716,7 +749,9 @@ export class LlmService {
         });
       if (cost)
         await tx.insert(costs).values(this.costRow({ providerId, upstreamModel }, cost, actor));
+      return true;
     });
+    if (!created) return this.deploymentDetail(deploymentId);
     await this.record(actor, "deployment.create", deploymentId, null, {
       name,
       provider: provider.name,
@@ -725,6 +760,21 @@ export class LlmService {
     });
     await this.syncVersion(versionId).catch(() => undefined);
     return this.deploymentDetail(deploymentId);
+  }
+  /** Publish only the exact version exercised by the administrator's successful test. */
+  async completeSetup(id: string, versionId: string, actor: string) {
+    const { deployment, version } = await this.allowedVersion(actor, id);
+    if (version.id !== versionId) fail(409, "MODEL_PROBE_VERSION_CHANGED");
+    if (!deployment.setupPending) return;
+    const [updated] = await this.db.update(deployments)
+      .set({ setupPending: false, updatedAt: Date.now() })
+      .where(and(eq(deployments.id, id), eq(deployments.currentVersionId, versionId),
+        eq(deployments.enabled, true), eq(deployments.setupPending, true),
+        sql`${deployments.allowedUsers} = ${JSON.stringify([actor])}::jsonb`,
+        isNull(deployments.archivedAt), isNull(deployments.deletionState)))
+      .returning({ id: deployments.id });
+    if (!updated) fail(409, "MODEL_PROBE_VERSION_CHANGED");
+    await this.record(actor, "deployment.setup.complete", id, { setupPending: true }, { setupPending: false, versionId });
   }
   async createVersion(deploymentId: string, input: Record<string, unknown>, actor: string) {
     const deployment = await this.deploymentRow(deploymentId);
