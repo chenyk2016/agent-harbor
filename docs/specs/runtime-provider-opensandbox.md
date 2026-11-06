@@ -212,4 +212,27 @@ Runner、Builder、预览分别使用用途限定的网络配置。运行环境�
 
 A 的通过只说明接口切分保持 Docker 行为。B 通过才允许切少量新预览。C 通过才允许切少量新 Agent 会话。只要出现双写、越权、任务误重放、重复扣费、旧资源失联却被当作已停，立即撤掉对应负载的新分配并保留现场。P95 只说明该受控场景的样本，生产承诺要在目标负载和故障演练下确定。
 
-本轮核对了 Harbor 入口、已有探针和官方固定版本文档，未安装新版本、未运行新 PoC、未切换服务。下一实施项为阶段 A 的 Docker 行为等价测试，与阶段 B 的目标 Linux 私有预览及阶段 C 的回显双向通道探针分开提交验收。
+## 九、隔离实施与复跑
+
+阶段 A 将常驻对话和启动恢复接到同一生命周期接口，把 Docker 子进程留在传输适配器内。仍从旧版会话文件恢复 Claude 原生会话，并用旧归属标签盘点遗留容器。隔离回归通过后才启动阶段 B。
+
+阶段 B 的探针在单独的 Ubuntu 24.04 环境运行独立 Docker 引擎。两个后端运行同一固定镜像和同一个 PostgreSQL 测试库。Caddy 使用一个固定入口，先撤掉旧路由，确认旧进程停止，再建立并核对下一份部署。探针分别验证授权访问、业务读写、静态资源、WebSocket、管理进程强杀以及从另一张网络绕过入口的尝试。应用的嵌入策略通过响应头核对。
+
+单租户 OpenSandbox 1.2.0 的管理密钥保护生命周期接口。内部数据转发路由允许无密钥访问，因此管理服务和自动发布的端口都必须绑定到受信控制主机的回环地址。Caddy 负责对每次浏览和 WebSocket 握手验权，且应用进程不能收到登录 Cookie 或管理密钥。[OpenSandbox 1.2.0 认证中间件](https://github.com/opensandbox-group/OpenSandbox/blob/release-1.2.0/server/src/opensandbox_server/middleware/auth.py)
+
+| 当前代码 | 已接入的入口 |
+| --- | --- |
+| [常驻 Docker 适配器](../../src/docker/resident-provider.ts) | Harbor 常驻对话和启动恢复 |
+| [Docker 预览适配器](../../src/docker/preview-provider.ts) 与 [OpenSandbox 预览适配器](../../src/opensandbox/preview-provider.ts) | 隔离验收入口，使用统一环境引用和私有上游接口 |
+| [私有预览探针](../../tests/private-preview-verification.mjs) | 同一路由 Docker → OpenSandbox → Docker，显式选择后端 |
+
+在一次性 Linux 环境构建项目，并只在该副本安装固定的 `@alibaba-group/opensandbox@1.2.0`。准备 OpenSandbox Server 1.2.0、execd v1.1.0 和探针使用的 Node、PostgreSQL、Caddy 镜像，再运行：
+
+```sh
+AH_PRIVATE_PREVIEW_DISPOSABLE=1 \
+AH_OPENSANDBOX_SERVER=/path/to/opensandbox-server \
+AH_PREVIEW_EXECD_IMAGE=opensandbox/execd:v1.1.0 \
+node tests/private-preview-verification.mjs
+```
+
+探针使用临时 Caddy 和测试登录凭证。工作台的真实登录、浏览器 iframe 和产品级路由持久化仍属于后续准入。并发、创建响应丢失和宿主引擎故障仍按第八节扩大验证，现用服务继续使用原设置。
