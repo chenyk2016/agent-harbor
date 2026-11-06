@@ -840,7 +840,9 @@ test("email-only deployment works without Google credentials while a Google depl
   const f = await fixture("email");
   try {
     const prompt = applicationLoginCommand + " 做一个带邮箱登录的应用";
-    f.authByPrompt.set(prompt, { mode: "required", providers: ["email_password"] });
+    const config = await f.a.request<{ loginProviders: string[] }>("/applications/config");
+    assert.deepEqual(config.loginProviders, ["email_password"]);
+    f.authByPrompt.set(prompt, { mode: "required", providers: ["email_password", "google"] });
     const created = await f.a.request<{ app: { id: string } }>("/applications", "POST", {
       title: "邮箱登录", prompt, clientRequestId: randomUUID(),
     });
@@ -855,6 +857,24 @@ test("email-only deployment works without Google credentials while a Google depl
     await wait(async () => (await f.store.operations(appId)).some(operation =>
       operation.kind === "preview" && operation.error === "APPLICATION_AUTH_GOOGLE_UNAVAILABLE"));
     assert.deepEqual(f.routes().find(item => item.appId === appId)?.visitorAuth?.providers, ["email_password"]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("new generated applications stay public when no managed login is configured", async () => {
+  const f = await fixture();
+  try {
+    const config = await f.a.request<{ loginProviders: string[] }>("/applications/config");
+    assert.deepEqual(config.loginProviders, []);
+    const prompt = applicationLoginCommand + "加平台登录";
+    f.authByPrompt.set(prompt, { mode: "required", providers: ["email_password", "google"] });
+    const { app } = await f.a.request<{ app: { id: string } }>("/applications", "POST", {
+      title: "平台登录不可用", prompt, clientRequestId: randomUUID(),
+    });
+    await wait(async () => (await f.store.revisions(app.id)).length === 2);
+    const current = await f.store.owned("a", app.id);
+    assert.equal((await f.store.revision(app.id, current.headRevisionId!)).manifest.auth, undefined);
   } finally {
     await f.close();
   }

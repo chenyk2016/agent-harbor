@@ -93,6 +93,14 @@ export class VisitorAuthService {
     )[0];
   }
 
+  availableProviders(environment: AppEnvironment, backend = this.options.defaultBackend ?? "pocketbase"): VisitorProvider[] {
+    if (backend === "better_auth" && !this.better) return [];
+    const google = backend === "better_auth"
+      ? this.better?.googleAvailable(environment)
+      : this.options.googleId && this.options.googleSecret;
+    return google ? [...visitorProviders] : ["email_password"];
+  }
+
   /** 准备固定的环境账号集合。候选实例不会提前改变当前入口的登录设置。 */
   async provision(
     appId: string,

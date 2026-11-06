@@ -12,8 +12,10 @@ user-invocable: true
 
 - 只允许 Google 登录写 `"auth": { "mode": "required", "providers": ["google"] }`。
 - 只允许邮箱密码注册和登录写 `"auth": { "mode": "required", "providers": ["email_password"] }`。
-- 两种方式并用写 `"auth": { "mode": "required", "providers": ["email_password", "google"] }`。接入登录但没有指定方式时用这两种。
+- 两种方式并用写 `"auth": { "mode": "required", "providers": ["email_password", "google"] }`。接入登录但没有指定方式时，只用当前平台明确可用的方式。
 - 明确关闭登录写 `"auth": { "mode": "public" }`。已受保护的环境需要所有者在构建预览或发布时确认开放。仅咨询登录或编辑无关功能时保留原配置。新应用没有声明时默认公开。
+
+仅声明当前平台明确可用的方式。平台没有可用方式时不配置托管登录，告知用户联系管理员配置，或自行实现。
 
 Harbor 固定运行层提供登录入口，托管页根据部署配置展示可用的登录方式。邮箱密码注册成功后直接登录。相同邮箱的密码账号与 Google 账号各自独立，按应用访客 ID 区分数据。需要定制入口或用户数据时，再修改业务代码。
 

@@ -29,7 +29,7 @@ import {
 } from "./docker.js";
 import { CaddyApplicationEdge } from "./edge.js";
 import { VisitorAuthService } from "./visitor-auth/service.js";
-import { visitorProviders } from "./visitor-auth/policy.js";
+import { visitorProviders, type VisitorProvider } from "./visitor-auth/policy.js";
 import type { VisitorAuthOptions } from "./visitor-auth/config.js";
 import { parseManifest, migrationPlan } from "./manifest.js";
 import { readBusinessData } from "./table-query.js";
@@ -296,7 +296,7 @@ export class ApplicationService {
               await cp(resolve("templates/application-sql"), join(directory, "workspace"), { recursive: true });
           },
           // 专家在创建会话时固定；后续生成从会话快照恢复，不随每条用户消息重新选择。
-          { expert: appExpert, deploymentId: modelDeploymentId },
+          { expert: this.creationExpert(), deploymentId: modelDeploymentId },
         );
         await this.store.activate(result.app.id, session.id);
         const source = await this.sources.snapshot(
@@ -340,6 +340,22 @@ export class ApplicationService {
       });
     return result;
   }
+  /** 新应用只使用测试和正式环境都已配置的登录方式。 */
+  creationLoginProviders(): VisitorProvider[] {
+    const preview = this.visitorAuth?.availableProviders("preview") ?? [];
+    const production = this.visitorAuth?.availableProviders("production") ?? [];
+    return preview.filter(provider => production.includes(provider));
+  }
+
+  private creationExpert() {
+    const providers = this.creationLoginProviders();
+    const capability = providers.length
+      ? `当前平台支持的应用登录方式（测试与正式环境均可用）：${providers.join(", ")}。启用托管登录时只声明这些方式；用户未指定方式时使用全部可用方式。所请求方式不可用时说明原因和实际启用的方式。`
+      : "平台未配置应用登录方式。不要配置托管登录或生成依赖托管登录的页面；告诉用户联系管理员配置，或由用户自行实现登录。";
+    const instructions = appExpert.instructions + "\n" + capability;
+    return { ...appExpert, instructions, digest: createHash("sha256").update(instructions).digest("hex") };
+  }
+
   /** 在应用源码写入门内接收需求，复用会话执行；成功后确认开发环境停止、保存固定版本，再自动排队预览。 */
   async generate(
     userId: string,
@@ -466,10 +482,23 @@ export class ApplicationService {
       this.controller.store.directory(sessionId),
       "workspace",
     );
+    const path = join(directory, "harbor-app.json");
+    const raw = JSON.parse(await readFile(path, "utf8"));
+    let manifest = parseManifest(raw);
+    const auth = manifest.auth;
+    if (messageId && auth?.mode === "required" &&
+        !(await this.store.authProtection(appId)).some(policy => policy.enabled)) {
+      const available = this.creationLoginProviders();
+      const requested = auth.providers.filter(provider => available.includes(provider));
+      const providers = requested.length ? requested : available;
+      if (providers.length !== auth.providers.length || providers.some(provider => !auth.providers.includes(provider))) {
+        if (providers.length) raw.auth = { mode: "required", providers };
+        else delete raw.auth;
+        manifest = parseManifest(raw);
+        await writeFile(path, JSON.stringify(raw, null, 2) + "\n");
+      }
+    }
     const source = await this.sources.snapshot(appId, directory);
-    const manifest = parseManifest(
-      JSON.parse(await readFile(join(directory, "harbor-app.json"), "utf8")),
-    );
     return this.store.addRevision(
       appId,
       source,
@@ -621,8 +650,8 @@ export class ApplicationService {
     const previous = currentEndpoint.appliedDeploymentId
       ? (await this.store.deployment(currentEndpoint.appliedDeploymentId))?.spec?.visitorAuth
       : undefined;
-    const stored = (await this.store.authProtection(operation.appId))
-      .find(policy => policy.environment === artifact.target);
+    const protections = await this.store.authProtection(operation.appId);
+    const stored = protections.find(policy => policy.environment === artifact.target);
     const protectedBefore = !!(previous || stored?.enabled);
     const retained = previous?.providers ?? stored?.providers ?? [...visitorProviders];
     const declaration = revision.manifest.auth;
@@ -630,12 +659,22 @@ export class ApplicationService {
     if (protectedBefore && operation.kind !== "rollback" && declaration?.mode === "public" &&
         operation.payload.allowPublic !== true)
       fail(409, "APPLICATION_AUTH_PUBLIC_CONFIRMATION_REQUIRED");
-    const providers = operation.kind === "rollback" && protectedBefore
+    let providers = operation.kind === "rollback" && protectedBefore
       ? retained
       : declaration?.mode === "required" ? declaration.providers
       : declaration === undefined && protectedBefore ? retained
       : undefined;
-    if (providers && !this.visitorAuth) fail(503, "APPLICATION_AUTH_UNAVAILABLE");
+    if (providers) {
+      const scope = await this.visitorAuth?.scope(operation.appId, artifact.target);
+      const available = this.visitorAuth?.availableProviders(artifact.target, scope?.backend) ?? [];
+      const supported = providers.filter(provider => available.includes(provider));
+      if (supported.length) providers = supported;
+      else if (protectedBefore || protections.some(policy => policy.enabled)) {
+        // A platform configuration change must never open an already protected application.
+        fail(503, this.visitorAuth && providers.includes("google")
+          ? "APPLICATION_AUTH_GOOGLE_UNAVAILABLE" : "APPLICATION_AUTH_UNAVAILABLE");
+      } else providers = available.length ? available : undefined;
+    }
     if (providers && artifact.visitorAuthVersion !== 1)
       fail(409, "APPLICATION_AUTH_RUNTIME_REQUIRED");
     this.aborts.get(operation.id)?.signal.throwIfAborted();

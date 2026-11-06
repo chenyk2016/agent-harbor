@@ -51,6 +51,7 @@ export function createApplicationRouter(service: ApplicationService) {
     response.json({
       enabled: true,
       canCreate: service.options.creators.has(principal(response).userId),
+      loginProviders: service.creationLoginProviders(),
     }),
   );
   router.get("/applications", async (_request, response) =>

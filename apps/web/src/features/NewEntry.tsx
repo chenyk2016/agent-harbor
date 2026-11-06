@@ -53,6 +53,7 @@ export function NewEntry() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [appState, setAppState] = useState<AppState>("loading");
+  const [appLoginProviders, setAppLoginProviders] = useState<string[]>([]);
   const composer = useRef<HTMLTextAreaElement>(null);
   const request = useRef(crypto.randomUUID());
   const chatRequest = useRef(crypto.randomUUID());
@@ -66,9 +67,12 @@ export function NewEntry() {
   useEffect(() => {
     let alive = true;
     void api
-      .request<{ canCreate: boolean }>("/applications/config")
+      .request<{ canCreate: boolean; loginProviders?: string[] }>("/applications/config")
       .then((config) => {
-        if (alive) setAppState(config.canCreate ? "allowed" : "denied");
+        if (alive) {
+          setAppState(config.canCreate ? "allowed" : "denied");
+          setAppLoginProviders(config.loginProviders ?? []);
+        }
       })
       .catch((value) => {
         if (!alive) return;
@@ -273,6 +277,14 @@ export function NewEntry() {
           </Text>
         )}
 
+        {mode === "app" && appReady && (
+          <Text mt={2} fontSize="11.5px" color="muted">
+            {appLoginProviders.length
+              ? `平台可用的应用登录方式：${appLoginProviders.map(provider => provider === "google" ? "Google" : "邮箱密码").join("、")}。`
+              : "平台没有配置应用登录方式。需要登录时，请联系管理员配置，或在应用里自行实现。"}
+          </Text>
+        )}
+
         <Box
           as="form"
           mt={5}
@@ -349,7 +361,7 @@ export function NewEntry() {
                 inline
               />
             </Box>
-            {mode === "app" && appReady && (
+            {mode === "app" && appReady && appLoginProviders.length > 0 && (
               <ApplicationLoginSkill draft={text} disabled={busy} onChoose={value => {
                 setText(value);
                 resetRequest();
