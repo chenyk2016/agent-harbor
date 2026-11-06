@@ -202,6 +202,23 @@ export function ModelSetup() {
   const preset = presets.find(item => item.id === selection);
   const savedProvider = selection.startsWith("saved:") ? data?.providers.find(item => "saved:" + item.id === selection) : undefined;
   const providerPreset = presets.find(item => item.format === provider?.format && item.apiBase.replace(/\/$/, "") === provider.apiBase);
+  const connection = step === 1 ? savedProvider ?? preset : provider;
+  const connectionPreset = connection && presets.find(item => item.format === connection.format &&
+    item.apiBase.replace(/\/$/, "") === connection.apiBase.replace(/\/$/, ""));
+  const connectionDetails = connection && (
+    <Stack spacing={1} bg="canvas" borderRadius="md" px={3} py={2} fontSize="sm">
+      <Text color="muted">{formats.find(item => item.value === connection.format)?.label ?? connection.format}</Text>
+      <Text overflowWrap="anywhere">API 基地址 <Text as="code">{connection.apiBase}</Text></Text>
+      {connection.format === "openai_chat" && (
+        <Text overflowWrap="anywhere">聊天请求地址 <Text as="code">{connection.apiBase.replace(/\/+$/, "")}/chat/completions</Text></Text>
+      )}
+      {connectionPreset?.docsUrl && (
+        <ChakraLink isExternal href={connectionPreset.docsUrl} alignSelf="flex-start" color="brand.500">
+          {connectionPreset.name} 官方文档
+        </ChakraLink>
+      )}
+    </Stack>
+  );
   const reference = referencePrice(provider, upstream);
   const requiresCost = !!data?.costPolicyRequired;
   const requiresPrice = !!wallet?.enabled;
@@ -350,6 +367,7 @@ export function ModelSetup() {
         ) : !data || !wallet ? <Spinner aria-label="正在读取模型配置" /> : (
           <Stack spacing={5} border="1px solid" borderColor="line" borderRadius="xl" p={{ base: 4, md: 6 }} bg="surface">
             {error && <Alert status="error" borderRadius="md"><AlertIcon />{error}</Alert>}
+            {step !== 1 && connectionDetails}
             {step === 1 && (
               <Stack spacing={4} as="form" onSubmit={event => { event.preventDefault(); void perform(saveProvider); }}>
                 <Heading size="sm">连接模型供应商</Heading>
@@ -372,12 +390,12 @@ export function ModelSetup() {
                     <FormControl isRequired><FormLabel>API 地址</FormLabel><Input type="url" value={address} onChange={event => setAddress(event.target.value)} placeholder="https://example.com/v1" /></FormControl>
                   </>
                 )}
+                {connectionDetails}
                 {selection && !savedProvider && (
                   <FormControl isRequired>
                     <FormLabel><HStack><KeyRound size={14} /><Text as="span">API Key</Text></HStack></FormLabel>
                     <Input type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} maxLength={4096} placeholder="粘贴供应商发给你的密钥" />
                     {preset?.keyHint && <Text fontSize="xs" mt={2} color="muted">{preset.keyHint}</Text>}
-                    {preset?.docsUrl && <ChakraLink isExternal href={preset.docsUrl} mt={2} display="inline-block" color="brand.500" fontSize="xs">查看供应商文档</ChakraLink>}
                   </FormControl>
                 )}
                 <Button alignSelf="flex-start" type="submit" isLoading={busy} isDisabled={!selection || (!savedProvider && !key.trim())}>保存并选择模型</Button>
