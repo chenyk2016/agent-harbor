@@ -5,11 +5,15 @@ ENV HTTP_PROXY=${BUILD_PROXY} HTTPS_PROXY=${BUILD_PROXY} http_proxy=${BUILD_PROX
 RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap socat python3 python3-pip python3-venv git ripgrep curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /platform/runtime
 COPY package.json package-lock.json ./
-RUN npm ci --proxy=${BUILD_PROXY} --omit=dev --workspaces=false --registry=https://registry.npmjs.org
+# Local MCP runs with /platform hidden. Keep its dependencies at their real /opt path.
+RUN npm ci --proxy=${BUILD_PROXY} --omit=dev --workspaces=false --registry=https://registry.npmjs.org \
+    && mkdir -p /opt/harbor-runtime \
+    && mv node_modules /opt/harbor-runtime/node_modules \
+    && ln -s /opt/harbor-runtime/node_modules node_modules
 RUN python3 -m pip install --break-system-packages --no-cache-dir uv==0.9.5
 COPY dist/src ./dist/src
 COPY dist/src /opt/harbor-runtime
-RUN ln -s /platform/runtime/node_modules /opt/harbor-runtime/node_modules && mkdir -p /workspace /platform/state /platform/run /opt/harbor-skills && chown node:node /workspace /platform/state
+RUN mkdir -p /workspace /platform/state /platform/run /opt/harbor-skills && chown node:node /workspace /platform/state
 COPY infra/managed-settings.json /etc/claude-code/managed-settings.json
 COPY LICENSE NOTICE ./
 COPY LICENSES ./LICENSES
