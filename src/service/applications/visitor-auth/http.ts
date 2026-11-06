@@ -87,11 +87,28 @@ function escape(value: string) {
 const visitorCsp =
   "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
+function visitorFrameCsp(parent?: string) {
+  return parent ? visitorCsp.replace("frame-ancestors 'none'", "frame-ancestors " + parent) : visitorCsp;
+}
+
+/** Embedded status documents have no form or script and reveal no session data. */
+function frameStatus(response: Response, parent: string, status: number, title: string, message: string) {
+  response.status(status)
+    .set("Content-Security-Policy", `default-src 'none'; base-uri 'none'; frame-ancestors ${parent}; form-action 'none'`)
+    .type("html")
+    .send(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>${escape(title)}</title><p role="${status < 400 ? "status" : "alert"}">${escape(message)}</p></html>`);
+}
+
 /** 服务端渲染统一登录页，登录与注册通过同一条短时流程切换。 */
 function signInPage(
   response: Response,
   flow: string,
-  context: { origin: string; providers: readonly VisitorProvider[]; workbenchReturnOrigin?: string },
+  context: {
+    origin: string;
+    providers: readonly VisitorProvider[];
+    workbenchReturnOrigin?: string;
+    embeddedParentOrigin?: string;
+  },
   mode: "password" | "register",
   message = "",
   status = 200,
@@ -111,7 +128,7 @@ function signInPage(
   ].filter(Boolean);
   response
     .status(status)
-    .set("Content-Security-Policy", [visitorCsp, ...destinations].join(" "))
+    .set("Content-Security-Policy", [visitorFrameCsp(context.embeddedParentOrigin), ...destinations].join(" "))
     // Preserve Origin for same-origin form POSTs without sending a referrer to Google.
     .set("Referrer-Policy", "same-origin")
     .type("html")
@@ -214,33 +231,35 @@ export function visitorReturnPath(value: unknown, base: string) {
 }
 
 /** Keep provider responses, SQL bindings, and submitted credentials out of error logs. */
-const visitorErrors: ErrorRequestHandler = (
-  error: unknown,
-  request,
-  response,
-  _next,
-) => {
-  request.resume();
-  if (response.headersSent) {
-    response.destroy();
-    return;
-  }
-  if (error instanceof ServiceError) {
-    response.status(error.status).json({ error: error.code });
-    return;
-  }
-  const type = (error as { type?: string })?.type;
-  if (type === "entity.too.large" || type === "parameters.too.many") {
-    response.status(413).json({ error: "BODY_TOO_LARGE" });
-    return;
-  }
-  response.status(503).json({ error: "APPLICATION_AUTH_UNAVAILABLE" });
-};
+function visitorErrors(embeddedHost?: string, workbenchOrigin?: string): ErrorRequestHandler {
+  return (error: unknown, request, response, _next) => {
+    request.resume();
+    if (response.headersSent) {
+      response.destroy();
+      return;
+    }
+    const type = (error as { type?: string })?.type;
+    const tooLarge = type === "entity.too.large" || type === "parameters.too.many";
+    const failure = error instanceof ServiceError ? error : tooLarge
+      ? { status: 413, code: "BODY_TOO_LARGE" }
+      : { status: 503, code: "APPLICATION_AUTH_UNAVAILABLE" };
+    const loginFrame = (request.method === "GET" && request.path === "/login") ||
+      (request.method === "POST" && ["/password", "/register"].includes(request.path));
+    if (response.locals.visitorEdgeTrusted && loginFrame && workbenchOrigin && embeddedHost &&
+        request.get("host") === embeddedHost) {
+      frameStatus(response, workbenchOrigin, failure.status, "无法继续登录", "登录暂时无法继续，请返回预览后重试。");
+      return;
+    }
+    response.status(failure.status).json({ error: failure.code });
+  };
+}
 
 /** These routes have their own host and session boundary, separate from the management API. */
 export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: PreviewAccess) {
   const router = Router({ caseSensitive: true });
   const authHost = new URL(service.options.authOrigin).host;
+  const embeddedAuthOrigin = service.options.embeddedAuthOrigin;
+  const embeddedAuthHost = embeddedAuthOrigin ? new URL(embeddedAuthOrigin).host : undefined;
   router.use((_request, response, next) => {
     response.set({
       "Cache-Control": "no-store",
@@ -255,10 +274,17 @@ export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: 
       !timingSafeEqual(supplied, expected)
     )
       fail(404, "NOT_FOUND");
+    response.locals.visitorEdgeTrusted = true;
     next();
   });
   const authHostOnly = (request: Request) => {
     if (request.get("host") !== authHost) fail(404, "NOT_FOUND");
+  };
+  const flowHost = (request: Request) => {
+    if (embeddedAuthOrigin && request.get("host") === embeddedAuthHost)
+      return { origin: embeddedAuthOrigin, embedded: true };
+    authHostOnly(request);
+    return { origin: service.options.authOrigin, embedded: false };
   };
   const incoming = (request: Request) =>
     service.live(
@@ -308,6 +334,23 @@ export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: 
       service.options.authOrigin + visitorPath + "/login?flow=" + flow,
     );
   });
+  router.post("/app/:id/:env/embedded-start", async (request, response) => {
+    const parent = service.options.workbenchOrigin;
+    if (!embeddedAuthOrigin || !parent || parameter(request, "env") !== "preview")
+      fail(404, "NOT_FOUND");
+    origin(request, parent);
+    response.vary("Origin").set({
+      "Access-Control-Allow-Origin": parent,
+      "Access-Control-Allow-Credentials": "true",
+    });
+    const scope = await incoming(request);
+    service.requireEmbeddedParent(scope);
+    limit("start:" + scope.id + ":" + sourceIP(request), 60);
+    const browser = cookie(request, appFlowCookie) ?? randomToken();
+    const flow = await service.start(scope, browser, service.embeddedCompletionPath(scope));
+    setCookie(response, appFlowCookie, browser, 15 * 60);
+    response.json({ url: embeddedAuthOrigin + visitorPath + "/login?flow=" + flow });
+  });
   router.get("/app/:id/:env/finish", async (request, response) => {
     const scope = await incoming(request);
     const browser = cookie(request, appFlowCookie);
@@ -320,8 +363,16 @@ export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: 
     );
     setCookie(response, sessionCookie, session.token, sessionSeconds);
     const workbenchReturn = previewReturn(scope.app_id, scope.environment);
-    redirect(response, session.returnPath === workbenchReturn
+    redirect(response, session.returnPath === workbenchReturn || session.returnPath === service.embeddedCompletionPath(scope)
       ? session.returnPath : visitorReturnPath(session.returnPath, service.base(scope)));
+  });
+  router.get("/app/:id/:env/embedded-complete", async (request, response) => {
+    const scope = await incoming(request);
+    const parent = service.requireEmbeddedParent(scope);
+    const value = cookie(request, sessionCookie);
+    if (!value) fail(401, "APPLICATION_AUTH_REQUIRED");
+    await service.session(scope, value);
+    frameStatus(response, parent, 200, "登录成功", "登录成功，正在打开预览。");
   });
   router.get("/app/:id/:env/me", async (request, response) => {
     const scope = await incoming(request);
@@ -398,10 +449,10 @@ export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: 
   });
 
   router.get("/login", async (request, response) => {
-    authHostOnly(request);
+    const host = flowHost(request);
     const flow = token(request.query.flow);
     const browser = cookie(request, authFlowCookie) ?? randomToken();
-    const context = await service.open(flow, browser);
+    const context = await service.open(flow, browser, host.embedded);
     setCookie(response, authFlowCookie, browser, 15 * 60);
     signInPage(
       response,
@@ -419,12 +470,13 @@ export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: 
   });
   for (const action of ["password", "register", "google"] as const) {
     router.post("/" + action, body, async (request, response) => {
-      authHostOnly(request);
-      origin(request, service.options.authOrigin);
+      const host = flowHost(request);
+      if (host.embedded && action === "google") fail(404, "NOT_FOUND");
+      origin(request, host.origin);
       const browser = cookie(request, authFlowCookie);
       if (!browser) fail(400, "APPLICATION_AUTH_LINK_INVALID");
       const flow = token(request.body?.flow);
-      const context = await service.open(flow, browser);
+      const context = await service.open(flow, browser, host.embedded);
       limit("form:" + context.id + ":" + sourceIP(request), 30);
       if (action === "google")
         return redirect(response, await service.googleStart(context));
@@ -500,7 +552,7 @@ export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: 
     );
   });
 
-  router.use(visitorErrors);
+  router.use(visitorErrors(embeddedAuthHost, service.options.workbenchOrigin));
   return router;
 }
 
@@ -565,6 +617,6 @@ export function createVisitorManagementRouter(apps: ApplicationService) {
       response.status(204).end();
     },
   );
-  router.use(visitorErrors);
+  router.use(visitorErrors());
   return router;
 }

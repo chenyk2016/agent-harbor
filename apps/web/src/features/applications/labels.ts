@@ -29,6 +29,7 @@ export interface Endpoint {
   requiresLogin?: boolean;
   ownerOnly?: boolean;
   previewParentOrigin?: string;
+  embeddedEmailLogin?: boolean;
   loginProviders?: ("google" | "email_password")[];
   publicReleaseNeedsConfirmation?: boolean;
   url: string;

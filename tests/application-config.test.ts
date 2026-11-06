@@ -65,6 +65,22 @@ test("visitor prerequisites auto-enable email access while optional provider fai
   assert.ok(reasons.some(([feature]) => feature === "applicationVisitorEmbedded"));
   assert.ok(!JSON.stringify(reasons).includes("fixture-incomplete-id"));
 
+  process.env.AH_APP_AUTH_WORKBENCH_ORIGIN = "https://studio.example.net";
+  for (const origin of ["https://auth.example.com", "https://studio.example.net",
+    "https://embedded.apps.example.net", "https://*.example.net", "http://embedded.example.net"]) {
+    const previousReports = reasons.length;
+    process.env.AH_APP_AUTH_EMBEDDED_ORIGIN = origin;
+    const invalid = (await applicationOptions("unused", report))?.visitorAuth;
+    assert.equal(invalid?.workbenchOrigin, "https://studio.example.net");
+    assert.equal(invalid?.embeddedAuthOrigin, undefined);
+    assert.ok(reasons.slice(previousReports).some(([feature, reason]) =>
+      feature === "applicationVisitorEmbedded" && reason === "Invalid AH_APP_AUTH_EMBEDDED_ORIGIN"));
+  }
+  for (const origin of ["https://preview-auth.example.net", "https://preview-auth.apps.example.net"]) {
+    process.env.AH_APP_AUTH_EMBEDDED_ORIGIN = origin;
+    assert.equal((await applicationOptions("unused", report))?.visitorAuth?.embeddedAuthOrigin, origin);
+  }
+
   process.env.AH_APP_AUTH_ENABLED = "0";
   assert.equal((await applicationOptions("unused", report))?.visitorAuth, undefined);
   assert.ok(reasons.some(([feature, reason]) => feature === "applicationVisitorAuth" && reason.includes("Disabled")));

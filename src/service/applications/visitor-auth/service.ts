@@ -13,6 +13,7 @@ import { visitorProviders, type VisitorProvider } from "./policy.js";
 export const sessionCookie = "__Host-ah_app";
 export const appFlowCookie = "__Host-ah_app_flow";
 export const authFlowCookie = "__Host-ah_auth_flow";
+const embeddedCompleteRoute = "__harbor/auth/embedded-complete";
 export const sessionSeconds = 8 * 3600;
 export const randomToken = () => randomBytes(32).toString("base64url");
 export const hash = (value: string) =>
@@ -35,6 +36,7 @@ interface Scope {
 /** 托管登录只使用已确认部署的登录方式。 */
 interface LiveScope extends Scope {
   providers: readonly VisitorProvider[];
+  previewParentOrigin: string | null;
 }
 
 /** 一次注册或登录流程的服务端绑定。回跳路径和 PKCE verifier 不由浏览器决定。 */
@@ -189,10 +191,11 @@ export class VisitorAuthService {
     db: Database | Tx = this.db,
   ): Promise<LiveScope> {
     const [scope] = await this.rows<
-      Scope & { active_providers: VisitorProvider[] | null }
+      Scope & { active_providers: VisitorProvider[] | null; previewParentOrigin: string | null }
     >(
       sql`
-      SELECT s.*, d.spec->'visitorAuth'->'providers' AS active_providers FROM app_auth_scopes s
+      SELECT s.*, d.spec->'visitorAuth'->'providers' AS active_providers,
+        d.spec->'visitorAuth'->>'previewParentOrigin' AS "previewParentOrigin" FROM app_auth_scopes s
       JOIN applications a ON a.id=s.app_id AND a.status='active'
       JOIN app_endpoints e ON e."appId"=s.app_id AND e.environment=s.environment
       JOIN app_deployments d ON d.id IN (e."desiredDeploymentId", e."appliedDeploymentId")
@@ -208,6 +211,21 @@ export class VisitorAuthService {
     if (!scope || new URL(scope.origin).host !== host)
       fail(404, "APPLICATION_AUTH_NOT_AVAILABLE");
     return { ...scope, providers: scope.active_providers ?? visitorProviders };
+  }
+
+  /** Embedded login is available only to the workbench pinned to the live preview. */
+  requireEmbeddedParent(scope: LiveScope) {
+    const parent = this.options.workbenchOrigin;
+    if (!this.options.embeddedAuthOrigin || !parent || scope.environment !== "preview" ||
+        scope.previewParentOrigin !== parent)
+      fail(404, "APPLICATION_AUTH_NOT_AVAILABLE");
+    if (!scope.providers.includes("email_password"))
+      fail(403, "APPLICATION_AUTH_PROVIDER_DISABLED");
+    return parent;
+  }
+
+  embeddedCompletionPath(scope: Pick<Scope, "app_id" | "environment">) {
+    return this.base(scope) + embeddedCompleteRoute;
   }
 
   /** 加载当前部署并拒绝关闭的方式，包括直接调用和旧回调。 */
@@ -238,11 +256,13 @@ export class VisitorAuthService {
   }
 
   /** 让首次访问托管页的浏览器绑定握手，之后仅接受同一浏览器提交。 */
-  async open(flow: string, browser: string) {
+  async open(flow: string, browser: string, embedded: boolean) {
     const [row] = await this.rows<Flow>(sql`WITH bound AS (
-      UPDATE app_auth_flows SET auth_browser_hash=${hash(browser)}
-      WHERE flow_hash=${hash(flow)} AND expires_at>now() AND handoff_hash IS NULL
-        AND (auth_browser_hash IS NULL OR auth_browser_hash=${hash(browser)}) RETURNING *
+      UPDATE app_auth_flows f SET auth_browser_hash=${hash(browser)}
+      FROM app_auth_scopes s
+      WHERE f.scope_id=s.id AND f.flow_hash=${hash(flow)} AND f.expires_at>now() AND f.handoff_hash IS NULL
+        AND (s.environment='preview' AND f.return_path='/preview/' || s.app_id || '/' || ${embeddedCompleteRoute})=${embedded}
+        AND (f.auth_browser_hash IS NULL OR f.auth_browser_hash=${hash(browser)}) RETURNING f.*
       ) SELECT s.*,b.flow_hash,b.return_path,b.code_verifier
       FROM bound b JOIN app_auth_scopes s ON s.id=b.scope_id`);
     if (!row) fail(400, "APPLICATION_AUTH_LINK_INVALID");
@@ -254,7 +274,13 @@ export class VisitorAuthService {
     const studio = this.options.workbenchOrigin;
     const workbenchReturnOrigin = studio && row.environment === "preview" &&
       row.return_path === `${studio}/applications/${row.app_id}` ? studio : undefined;
-    return { ...row, providers: active.providers, workbenchReturnOrigin };
+    const embeddedParentOrigin = embedded ? this.requireEmbeddedParent(active) : undefined;
+    return {
+      ...row,
+      providers: embedded ? active.providers.filter(provider => provider === "email_password") : active.providers,
+      workbenchReturnOrigin,
+      embeddedParentOrigin,
+    };
   }
 
   /** 注册完成后走同一条一次性交接链路，密码和 PocketBase 凭据留在服务端。 */
@@ -466,7 +492,8 @@ export class VisitorAuthService {
         tx,
       );
       if (!flow?.handoff_provider) fail(400, "APPLICATION_AUTH_LINK_INVALID");
-      await this.requireProvider(scope, flow.handoff_provider, tx);
+      const active = await this.requireProvider(scope, flow.handoff_provider, tx);
+      if (flow.return_path === this.embeddedCompletionPath(scope)) this.requireEmbeddedParent(active);
       const [member] = await this.rows<Member>(
         sql`SELECT * FROM app_auth_users
         WHERE id=${flow.user_id} AND scope_id=${scope.id} FOR UPDATE`,

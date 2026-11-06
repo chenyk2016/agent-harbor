@@ -1078,14 +1078,18 @@ export class ApplicationService {
       endpoints: endpoints.map((endpoint) => {
         const deployment = deployments.find(item => item.id === endpoint.appliedDeploymentId)?.spec;
         const auth = deployment?.visitorAuth;
+        const previewParentOrigin = endpoint.environment === "preview" &&
+          auth?.previewParentOrigin === this.visitorAuth?.options.workbenchOrigin
+          ? auth?.previewParentOrigin : undefined;
+        const loginProviders = auth ? auth.providers ?? visitorProviders : [];
         return {
           ...endpoint,
           requiresLogin: !!auth,
           ...(deployment?.ownerOnly ? { ownerOnly: true } : {}),
-          previewParentOrigin: endpoint.environment === "preview" &&
-            auth?.previewParentOrigin === this.visitorAuth?.options.workbenchOrigin
-            ? auth?.previewParentOrigin : undefined,
-          loginProviders: auth ? auth.providers ?? visitorProviders : [],
+          previewParentOrigin,
+          loginProviders,
+          ...(endpoint.state === "ready" && previewParentOrigin && this.visitorAuth?.options.embeddedAuthOrigin &&
+            loginProviders.includes("email_password") ? { embeddedEmailLogin: true } : {}),
           publicReleaseNeedsConfirmation: !!auth || authProtection.some(
             policy => policy.environment === endpoint.environment && policy.enabled,
           ),

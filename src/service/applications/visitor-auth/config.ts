@@ -6,6 +6,8 @@ export interface VisitorAuthOptions {
   authOrigin: string;
   /** 同站 HTTPS 工作台，可选；只用于嵌入受保护的测试环境。 */
   workbenchOrigin?: string;
+  /** 独立同站 HTTPS 来源，只接收工作台内嵌的测试邮箱流程。 */
+  embeddedAuthOrigin?: string;
   appDomain: string;
   pocketbase: string;
   pocketbaseToken: string;
@@ -41,6 +43,7 @@ export function visitorOrigin(
 }
 
 export const visitorPath = "/__harbor/visitor";
+const dnsHostname = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 export type VisitorFeatureReporter = (feature: "applicationVisitorAuth" | "applicationVisitorGoogle" | "applicationVisitorEmbedded", reason: string) => void;
 const requiredFields = [
@@ -83,14 +86,14 @@ function configuredVisitorAuth(report: VisitorFeatureReporter): VisitorAuthOptio
     type: "pkcs8",
   });
   const management = new URL(required("AH_APP_PUBLIC_ORIGIN"));
+  const site = appDomain.split(".").slice(1).join(".");
   let workbenchOrigin = process.env.AH_APP_AUTH_WORKBENCH_ORIGIN?.trim() || undefined;
   if (workbenchOrigin) {
     const studio = URL.parse(workbenchOrigin);
-    const site = appDomain.split(".").slice(1).join(".");
     const appLabel = studio?.hostname.endsWith("." + appDomain)
       ? studio.hostname.slice(0, -(appDomain.length + 1)) : "";
     // 保留由平台分配的应用域名；工作台只允许同站、独立的 HTTPS origin。
-    if (studio?.protocol !== "https:" || studio.origin !== workbenchOrigin ||
+    if (studio?.protocol !== "https:" || studio.origin !== workbenchOrigin || !dnsHostname.test(studio.hostname) ||
         !site.includes(".") || !studio.hostname.endsWith("." + site) ||
         studio.hostname === auth.hostname || studio.hostname === appDomain ||
         /^[a-f0-9-]+-(preview|prod)$/.test(appLabel)) {
@@ -98,6 +101,18 @@ function configuredVisitorAuth(report: VisitorFeatureReporter): VisitorAuthOptio
       workbenchOrigin = undefined;
     }
   } else report("applicationVisitorEmbedded", "Missing AH_APP_AUTH_WORKBENCH_ORIGIN");
+  let embeddedAuthOrigin = process.env.AH_APP_AUTH_EMBEDDED_ORIGIN?.trim() || undefined;
+  if (embeddedAuthOrigin) {
+    const embedded = URL.parse(embeddedAuthOrigin);
+    const workbenchHost = workbenchOrigin && new URL(workbenchOrigin).hostname;
+    if (!workbenchHost || embedded?.protocol !== "https:" || embedded.origin !== embeddedAuthOrigin ||
+        !dnsHostname.test(embedded.hostname) || !embedded.hostname.endsWith("." + site) ||
+        [auth.hostname, workbenchHost, management.hostname, appDomain].includes(embedded.hostname) ||
+        (embedded.hostname.endsWith("." + appDomain) && embedded.hostname !== "preview-auth." + appDomain)) {
+      report("applicationVisitorEmbedded", "Invalid AH_APP_AUTH_EMBEDDED_ORIGIN");
+      embeddedAuthOrigin = undefined;
+    }
+  }
   const defaultBackend = process.env.AH_APP_AUTH_BACKEND?.trim() || "pocketbase";
   const betterSecret = process.env.AH_APP_AUTH_BETTER_SECRET?.trim();
   if (!["pocketbase", "better_auth"].includes(defaultBackend) ||
@@ -128,7 +143,7 @@ function configuredVisitorAuth(report: VisitorFeatureReporter): VisitorAuthOptio
   if (
     auth.protocol !== "https:" ||
     auth.href !== auth.origin + "/" ||
-    !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/.test(appDomain) ||
+    !dnsHostname.test(appDomain) ||
     [auth.hostname, management.hostname].some(
       (host) => host === appDomain || host.endsWith("." + appDomain),
     ) ||
@@ -145,6 +160,7 @@ function configuredVisitorAuth(report: VisitorFeatureReporter): VisitorAuthOptio
   return {
     authOrigin: auth.origin,
     workbenchOrigin,
+    embeddedAuthOrigin,
     appDomain,
     pocketbase: pocketbase.origin,
     edgeDial,

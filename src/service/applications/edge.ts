@@ -29,8 +29,10 @@ function protectedRoutes(deployment: AppDeployment, base: string, auth: VisitorE
   });
   const checkPath = visitorPath + "/check/" + scope + "/" + deployment.id;
   const paths = [base + "api", base + "api/*"];
+  const actions = ["start", "finish", "me", "logout", "embedded-session"];
+  if (deployment.environment === "preview") actions.push("embedded-start", "embedded-complete");
   return [
-    ...["start", "finish", "me", "logout", "embedded-session"].map(action => ({
+    ...actions.map(action => ({
       match: [{ path: [base + "__harbor/auth/" + action] }],
       handle: [
         { handler: "vars", log_skip: true },

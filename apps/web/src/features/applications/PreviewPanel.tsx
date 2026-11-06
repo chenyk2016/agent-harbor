@@ -1,6 +1,6 @@
 /** 预览画布：居中白色画框、桌面/手机两种宽度，以及未就绪和过期提示。 */
 import { Box, Button, Flex, HStack, Spinner, Text } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Monitor } from "lucide-react";
 import { EmptyState } from "./EditorChrome.js";
 import type { Endpoint } from "./labels.js";
@@ -13,6 +13,10 @@ export type PreviewPhase =
   | "failed-preview"
   | "paused"
   | "idle";
+
+type PreviewLogin =
+  | { key: string; state: "starting" | "failed" }
+  | { key: string; state: "frame"; url: string };
 
 /** 根据入口与源码版本展示真实预览或阶段提示；旧预览仍运行时明确显示与最新源码的差异。 */
 export function PreviewPanel({
@@ -46,31 +50,89 @@ export function PreviewPanel({
   const workbenchUrl = preview.previewParentOrigin && !embedded
     ? new URL(window.location.pathname, preview.previewParentOrigin).href : undefined;
   const deployment = preview.appliedDeploymentId;
-  const probeKey = embeddedUrl ? `${embeddedUrl}:${deployment}:${refresh}` : undefined;
+  const probeKey = embeddedUrl
+    ? `${embeddedUrl}:${deployment}:${refresh}:${preview.embeddedEmailLogin === true}`
+    : undefined;
   const [probe, setProbe] = useState<{ key: string; state: "signed-in" | "login" | "failed" }>();
   const session = probe && probe.key === probeKey ? probe.state : undefined;
+  const [login, setLogin] = useState<PreviewLogin>();
+  const loginView = preview.embeddedEmailLogin && login?.key === probeKey ? login : undefined;
+  const loginRequest = useRef<AbortController>();
+  const sessionCheck = useRef<{ key: string; run: () => Promise<void> }>();
+  const fullPageLogin = embeddedUrl && new URL("__harbor/auth/start?workbench=1", embeddedUrl).href;
+
+  useEffect(() => () => loginRequest.current?.abort(), [probeKey]);
 
   useEffect(() => {
     if (!embeddedUrl || !probeKey) return;
-    const controller = new AbortController();
+    let pendingCheck: AbortController | undefined;
     const check = async () => {
+      pendingCheck?.abort();
+      const controller = new AbortController();
+      pendingCheck = controller;
       try {
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
         if (preview.ownerOnly && deployment) await grantPreview(deployment, signal);
         const response = await fetch(new URL("__harbor/auth/embedded-session", embeddedUrl), {
           credentials: "include",
+          redirect: "error",
           signal,
         });
-        if (!controller.signal.aborted)
-          setProbe({ key: probeKey, state: response.status === 204 ? "signed-in" : response.status === 401 ? "login" : "failed" });
+        if (controller.signal.aborted) return;
+        setProbe({ key: probeKey, state: response.status === 204 ? "signed-in" : response.status === 401 ? "login" : "failed" });
+        if (response.status === 204) {
+          loginRequest.current?.abort();
+          setLogin(value => value?.key === probeKey ? undefined : value);
+        }
       } catch {
         if (!controller.signal.aborted) setProbe({ key: probeKey, state: "failed" });
       }
     };
+    sessionCheck.current = { key: probeKey, run: check };
     void check();
     const timer = window.setInterval(check, 60000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => {
+      pendingCheck?.abort();
+      sessionCheck.current = undefined;
+      window.clearInterval(timer);
+    };
   }, [embeddedUrl, probeKey, preview.ownerOnly, deployment, grantPreview]);
+
+  const checkCurrentSession = () => {
+    const current = sessionCheck.current;
+    if (current && current.key === probeKey) void current.run();
+  };
+
+  const startEmailLogin = async () => {
+    if (!embeddedUrl || !probeKey || (loginRequest.current && !loginRequest.current.signal.aborted)) return;
+    const controller = new AbortController();
+    loginRequest.current = controller;
+    setLogin({ key: probeKey, state: "starting" });
+    try {
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]);
+      if (preview.ownerOnly && deployment) await grantPreview(deployment, signal);
+      const response = await fetch(new URL("__harbor/auth/embedded-start", embeddedUrl), {
+        method: "POST",
+        credentials: "include",
+        redirect: "error",
+        signal,
+      });
+      if (!response.ok) throw new Error("APPLICATION_AUTH_UNAVAILABLE");
+      const result = await response.json();
+      if (typeof result?.url !== "string") throw new Error("APPLICATION_AUTH_UNAVAILABLE");
+      const url = new URL(result.url);
+      if (url.protocol !== "https:" || url.username || url.password ||
+          url.pathname !== "/__harbor/visitor/login" || url.origin === window.location.origin ||
+          url.origin === new URL(embeddedUrl).origin)
+        throw new Error("APPLICATION_AUTH_UNAVAILABLE");
+      if (!controller.signal.aborted) setLogin({ key: probeKey, state: "frame", url: url.href });
+    } catch {
+      if (!controller.signal.aborted) setLogin({ key: probeKey, state: "failed" });
+    } finally {
+      if (loginRequest.current === controller) loginRequest.current = undefined;
+    }
+  };
+
   const outdated =
     ready && headVersion !== undefined && previewVersion !== headVersion;
   const copy =
@@ -159,13 +221,41 @@ export function PreviewPanel({
             <Flex h="100%" align="center" justify="center" role="status">
               <Spinner size="sm" mr={2} /> 正在检查预览登录
             </Flex>
-          ) : embedded && session === "login" ? (
+          ) : embedded && session !== "signed-in" && loginView?.state === "frame" ? (
+            <Flex h="100%" direction="column">
+              <Box
+                as="iframe"
+                title="邮箱登录测试账号"
+                src={loginView.url}
+                sandbox="allow-forms allow-same-origin"
+                onLoad={checkCurrentSession}
+                border={0}
+                flex={1}
+                minH={0}
+                w="100%"
+              />
+              <HStack justify="center" flexWrap="wrap" p={2} borderTop="1px solid" borderColor="line">
+                <Button size="xs" variant="ghost" onClick={startEmailLogin}>重新打开登录页</Button>
+                <Button size="xs" variant="ghost" as="a" href={fullPageLogin}>在整页登录</Button>
+              </HStack>
+            </Flex>
+          ) : embedded && session !== "signed-in" &&
+              (session === "login" || loginView || (session === "failed" && preview.embeddedEmailLogin)) ? (
             <Flex h="100%" align="center" justify="center">
               <EmptyState
                 icon={<Monitor size={20} />}
                 title="登录后体验预览"
-                description="使用此应用的测试账号，登录后会自动回到这里。"
-                action={<Button as="a" href={new URL("__harbor/auth/start?workbench=1", preview.url).href}>登录测试账号</Button>}
+                description={loginView?.state === "failed" || session === "failed"
+                  ? "暂时无法打开预览登录，可以重试或在整页登录。"
+                  : "使用此应用的测试账号，登录后即可体验预览。"}
+                action={preview.embeddedEmailLogin ? (
+                  <HStack justify="center" flexWrap="wrap">
+                    <Button size="sm" onClick={startEmailLogin} isLoading={loginView?.state === "starting"}>
+                      {loginView?.state === "failed" ? "重试邮箱登录" : "用邮箱登录"}
+                    </Button>
+                    <Button size="sm" variant="ghost" as="a" href={fullPageLogin}>在整页登录</Button>
+                  </HStack>
+                ) : <Button as="a" href={fullPageLogin}>登录测试账号</Button>}
               />
             </Flex>
           ) : ready && preview.requiresLogin && session !== "signed-in" ? (

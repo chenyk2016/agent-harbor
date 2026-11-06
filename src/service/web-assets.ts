@@ -11,6 +11,7 @@ export async function serveWeb(
   response: ServerResponse,
   path: string,
   previewSources = "",
+  authFrameSource = "",
 ) {
   if (request.method !== "GET" && request.method !== "HEAD") return false;
   const page =
@@ -48,7 +49,7 @@ export async function serveWeb(
       "Referrer-Policy": "no-referrer",
       // Chakra/Emotion动态生成样式；只开放inline样式，脚本仍仅允许同源构建文件。
       "Content-Security-Policy":
-        `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${previewSources}; frame-src 'self' http://127.0.0.1:*${previewSources}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
+        `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${previewSources}; frame-src 'self' http://127.0.0.1:*${previewSources}${authFrameSource}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
     });
     response.end(request.method === "HEAD" ? undefined : content);
     return true;
@@ -59,9 +60,10 @@ export async function serveWeb(
 }
 
 /** 路由匹配由Express完成；serveWeb只按白名单读取构建资源，保留CSP与HEAD响应。 */
-export function createWebRouter(visitor?: { workbenchOrigin?: string; appDomain: string }) {
+export function createWebRouter(visitor?: { workbenchOrigin?: string; embeddedAuthOrigin?: string; appDomain: string }) {
   const workbenchHost = visitor?.workbenchOrigin ? new URL(visitor.workbenchOrigin).host : undefined;
   const sources = workbenchHost ? ` https://*.${visitor!.appDomain}` : "";
+  const authSource = visitor?.embeddedAuthOrigin ? ` ${new URL(visitor.embeddedAuthOrigin).origin}` : "";
   const router = Router({ caseSensitive: true });
   const pages = [
     "/",
@@ -97,8 +99,8 @@ export function createWebRouter(visitor?: { workbenchOrigin?: string; appDomain:
     next: import("express").NextFunction,
   ) => {
     const path = new URL(request.originalUrl, "http://localhost").pathname;
-    const previewSources = workbenchHost === request.headers.host ? sources : "";
-    if (!(await serveWeb(request, response, path, previewSources))) next();
+    const workbench = !!workbenchHost && workbenchHost === request.headers.host;
+    if (!(await serveWeb(request, response, path, workbench ? sources : "", workbench ? authSource : ""))) next();
   };
   router.get(pages, render);
   router.get(/^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css)$/, render);

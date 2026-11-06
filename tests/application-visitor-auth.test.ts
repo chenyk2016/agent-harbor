@@ -37,6 +37,7 @@ test("visitor return URLs stay within their own application path", () => {
     base + "../other",
     base + "%2e%2e/other",
     base + "__harbor/auth/finish",
+    base + "__harbor/auth/embedded-complete",
     base + "%5cother",
   ])
     assert.equal(visitorReturnPath(value, base), base);
@@ -49,6 +50,7 @@ test("visitor callbacks and sessions are bound to an app, environment, browser a
     authOrigin: "https://auth.example.com",
     appDomain: "apps.example.net",
     workbenchOrigin: "https://studio.example.net",
+    embeddedAuthOrigin: "https://embedded-auth.example.net",
     pocketbase: "http://127.0.0.1:1",
     pocketbaseToken: "fixture-only",
     betterAuth: { secret: randomUUID().repeat(2), google: {
@@ -210,7 +212,11 @@ test("visitor callbacks and sessions are bound to an app, environment, browser a
           appId,
           build,
           environment,
-          { visitorAuth: { origin: appOrigin, providers } },
+          { visitorAuth: {
+            origin: appOrigin,
+            providers,
+            ...(environment === "preview" ? { previewParentOrigin: service.options.workbenchOrigin } : {}),
+          } },
         ],
       );
       await pool.query(
@@ -295,12 +301,13 @@ test("visitor callbacks and sessions are bound to an app, environment, browser a
       flow: string,
       cookie: string,
       password = "fixture-password",
+      site = service.options.authOrigin,
     ) =>
-      request(visitorPath + "/" + action, authHost, {
+      request(visitorPath + "/" + action, new URL(site).host, {
         method: "POST",
         headers: {
           cookie,
-          origin: service.options.authOrigin,
+          origin: site,
           "content-type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
@@ -629,6 +636,91 @@ test("visitor callbacks and sessions are bound to an app, environment, browser a
       headers: { cookie },
     });
     assert.equal((await me.json()).id, assertion.userId);
+
+    const embeddedPreview = await seed(b, "preview");
+    const embeddedOrigin = service.options.embeddedAuthOrigin!;
+    const embeddedHost = new URL(embeddedOrigin).host;
+    const embedStart = (target: typeof preview, parent: string) =>
+      request(target.prefix + "/embedded-start", target.host, {
+        method: "POST",
+        headers: { origin: parent },
+      });
+    const foreignStart = await embedStart(embeddedPreview, "https://untrusted.example.net");
+    assert.equal(foreignStart.status, 403);
+    assert.equal(foreignStart.headers.get("access-control-allow-origin"), null);
+    assert.equal((await embedStart(production, studio)).status, 404);
+    const expiredStart = await embedStart(embeddedPreview, studio);
+    assert.equal(expiredStart.status, 200);
+    const expiredUrl = new URL((await expiredStart.json()).url);
+    await database.pool.query("UPDATE app_auth_flows SET expires_at=now() WHERE flow_hash=$1", [
+      createHash("sha256").update(expiredUrl.searchParams.get("flow")!).digest("hex"),
+    ]);
+    const expired = await request(expiredUrl.pathname + expiredUrl.search, embeddedHost);
+    assert.equal(expired.status, 400);
+    assert.match(expired.headers.get("content-type")!, /^text\/html/);
+    assert.ok(expired.headers.get("content-security-policy")?.split(";").includes(" frame-ancestors " + studio));
+    const expiredMarkup = await expired.text();
+    assert.match(expiredMarkup, /登录暂时无法继续/);
+    assert.doesNotMatch(expiredMarkup, /<form|<script|APPLICATION_AUTH_LINK_INVALID/);
+    const embed = await embedStart(embeddedPreview, studio);
+    assert.equal(embed.status, 200);
+    assert.equal(embed.headers.get("access-control-allow-origin"), studio);
+    assert.equal(embed.headers.get("access-control-allow-credentials"), "true");
+    assert.match(embed.headers.get("set-cookie")!, /; Secure; HttpOnly; SameSite=Lax;/);
+    const frameUrl = new URL((await embed.json()).url);
+    assert.equal(frameUrl.origin, embeddedOrigin);
+    assert.equal(frameUrl.pathname, visitorPath + "/login");
+    const framePath = frameUrl.pathname + frameUrl.search;
+    const frameFlow = frameUrl.searchParams.get("flow")!;
+    const onOrdinaryHost = await request(framePath, authHost);
+    assert.equal(onOrdinaryHost.status, 400);
+    assert.deepEqual(await onOrdinaryHost.json(), { error: "APPLICATION_AUTH_LINK_INVALID" });
+    const normal = await begin(embeddedPreview);
+    assert.equal((await request(visitorPath + "/login?flow=" + normal.flow, embeddedHost, {
+      headers: { cookie: normal.authCookie },
+    })).status, 400);
+    const loginFrame = await request(framePath, embeddedHost);
+    assert.equal(loginFrame.status, 200);
+    const frameCsp = loginFrame.headers.get("content-security-policy")!;
+    assert.ok(frameCsp.split(";").includes(" frame-ancestors " + studio));
+    assert.ok(frameCsp.endsWith("form-action 'self' " + embeddedPreview.origin));
+    const loginMarkup = await loginFrame.text();
+    assert.match(loginMarkup, /name="password"/);
+    assert.doesNotMatch(loginMarkup, /使用 Google 登录/);
+    const frameCookie = extractCookie(loginFrame);
+    assert.equal((await credential("google", frameFlow, frameCookie, "fixture-password", embeddedOrigin)).status, 404);
+    assert.equal((await credential("google", frameFlow, frameCookie)).status, 400);
+    assert.equal((await request(visitorPath + "/google/callback", embeddedHost)).status, 404);
+    const registerFrame = await request(framePath + "&mode=register", embeddedHost, {
+      headers: { cookie: frameCookie },
+    });
+    assert.equal(registerFrame.status, 200);
+    assert.match(await registerFrame.text(), /注册并登录/);
+    const badPassword = await credential("password", frameFlow, frameCookie, "x".repeat(73), embeddedOrigin);
+    assert.equal(badPassword.status, 400);
+    assert.equal(badPassword.headers.get("content-security-policy"), frameCsp);
+    assert.match(await badPassword.text(), /邮箱或密码不正确/);
+    const embedCookie = await complete(
+      embeddedPreview,
+      await credential("register", frameFlow, frameCookie, "fixture-password", embeddedOrigin),
+      extractCookie(embed),
+      service.base(embeddedPreview.scope) + "__harbor/auth/embedded-complete",
+    );
+    const frameDone = await request(embeddedPreview.prefix + "/embedded-complete", embeddedPreview.host, {
+      headers: { cookie: embedCookie },
+    });
+    assert.equal(frameDone.status, 200);
+    assert.ok(frameDone.headers.get("content-security-policy")?.split(";").includes(" frame-ancestors " + studio));
+    assert.match(await frameDone.text(), /登录成功，正在打开预览/);
+    assert.equal((await request(embeddedPreview.prefix + embedded, embeddedPreview.host, {
+      headers: { origin: studio, cookie: embedCookie },
+    })).status, 204);
+    assert.equal((await request(embeddedPreview.prefix + "/embedded-complete", embeddedPreview.host)).status, 401);
+    await database.pool.query(
+      `UPDATE app_deployments SET spec=jsonb_set(spec, '{visitorAuth,providers}', '["google"]') WHERE id=$1`,
+      [embeddedPreview.deployment],
+    );
+    assert.equal((await embedStart(embeddedPreview, studio)).status, 403);
 
     // Capture both an OAuth callback and a handoff before removing Google.
     const stale = await begin(production);

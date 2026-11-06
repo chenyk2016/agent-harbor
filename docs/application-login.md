@@ -43,6 +43,7 @@
 | `AH_APP_AUTH_POCKETBASE`、`AH_APP_AUTH_POCKETBASE_TOKEN` | 私有 PocketBase 地址及管理凭据。当前兼容配置在启用访客认证时仍检查这两项 |
 | `AH_APP_AUTH_BACKEND=better_auth`、`AH_APP_AUTH_BETTER_SECRET` | 新认证范围选用 Better Auth，并提供独立随机密钥（至少 32 字符）。省略后端时默认 PocketBase |
 | `AH_APP_AUTH_WORKBENCH_ORIGIN` | 可选。用于登录后的工作台内嵌预览，必须是符合实例同站约束的独立 HTTPS 来源 |
+| `AH_APP_AUTH_EMBEDDED_ORIGIN` | 可选。用于在工作台右侧注册或登录测试邮箱账号。使用与工作台、预览同站的独立 HTTPS 主机。应用通配域内可用平台保留的 `preview-auth` 子域 |
 
 兼容服务可使用经过隔离验证的 [PocketBase 0.41.1](https://pocketbase.io/docs/)。安装后绑定 Harbor 可访问的私有地址，持久化 `pb_data`，为 Harbor 配置专用超级用户令牌。备份包括控制库、访客认证私有配置和 PocketBase 数据。
 
@@ -65,6 +66,12 @@ auth.example.com {
 ```
 
 Caddy 与 Harbor 必须使用相同的校验密钥。认证请求的表单、Cookie、查询参数及回跳凭据不得记入代理日志。修改配置后先执行控制库迁移，再重启并验证保护页面。配置缺失或未通过校验时，访客认证保持不可用，应用作者仍须为每个应用明确选择公开或要求登录。
+
+### 工作台右侧邮箱登录
+
+例如工作台使用 `https://studio.example.net`，预览使用 `https://<app>-preview.apps.example.net`，则内嵌认证可使用 `https://preview-auth.example.net`。为该主机配置 HTTPS 和同样的 Caddy 校验头，只代理 `/__harbor/visitor/login`、`/__harbor/visitor/password` 和 `/__harbor/visitor/register`，其他路径返回 404。普通认证域和 Google 回调继续使用 `AH_APP_AUTH_ORIGIN`。
+
+工作台用注册或登录后的测试会话就地打开应用。认证页只接受该工作台嵌入，密码由独立认证域接收。配置不可用或内嵌流程无法完成时，可使用现有独立登录入口。
 
 ## 可选 Google 登录
 
