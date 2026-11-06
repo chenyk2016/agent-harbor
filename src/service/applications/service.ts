@@ -168,7 +168,7 @@ export class ApplicationService {
     };
   }
   /** 校验服务可接收操作、账号有效且在受信创作者白名单内；读取详情仍有自己的归属检查。 */
-  private async allowed(userId: string) {
+  async requireCreator(userId: string) {
     if (this.closing) fail(503, "APPLICATION_SERVICE_STOPPING");
     await this.sessions.identity.require(userId);
     if (!this.options.creators.has(userId))
@@ -272,7 +272,7 @@ export class ApplicationService {
     requestId: string,
     modelDeploymentId?: string,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const result = await this.store.create(userId, title, prompt, requestId, modelDeploymentId);
     if (!result.duplicate)
       this.launch(result.operation, async () => {
@@ -349,7 +349,7 @@ export class ApplicationService {
     expectedHead: string | null,
     modelDeploymentId?: string,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const app = await this.store.owned(userId, appId);
     if (!app.developmentSessionId) fail(409, "APPLICATION_NOT_READY");
     /** 登记本次源码操作及请求内容，重复提交沿用原请求。 */
@@ -511,7 +511,7 @@ export class ApplicationService {
     expectedGeneration?: number,
     allowPublic = false,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     await this.store.owned(userId, appId);
     const revision = await this.store.revision(appId, revisionId);
     const endpoint = await this.store.endpoint(appId, environment);
@@ -785,7 +785,7 @@ export class ApplicationService {
     requestId: string,
     expected: number,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const result = await this.store.begin(
       userId,
       appId,
@@ -814,7 +814,7 @@ export class ApplicationService {
     requestId: string,
     expectedHead: string | null,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const app = await this.store.owned(userId, appId),
       revision = await this.store.revision(appId, revisionId);
     if (!app.developmentSessionId) fail(409, "APPLICATION_NOT_READY");
@@ -876,7 +876,7 @@ export class ApplicationService {
     requestId: string,
     expectedHead: string | null,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const app = await this.store.owned(userId, appId);
     if (!app.developmentSessionId) fail(409, "APPLICATION_NOT_READY");
     /** 登记本次源码操作及请求内容；重复提交沿用原请求，避免网络重试触发第二轮生成或保存。 */
@@ -915,7 +915,7 @@ export class ApplicationService {
     requestId: string,
     expectedGeneration: number,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     await this.store.owned(userId, appId);
     const old = await this.store.deployment(deploymentId);
     if (old?.appId !== appId || old.environment !== "production" || !old.spec)
@@ -970,7 +970,7 @@ export class ApplicationService {
     // 不向浏览器返回容器spec、宿主路径、数据库账号或运行配置。
     return {
       app,
-      analysisEnabled: !!this.analysis,
+      analysisEnabled: !!this.analysis && this.options.creators.has(userId),
       revisions: revisions.map(({ source, ...revision }) => ({
         ...revision,
         commit: source.commit,
@@ -1041,7 +1041,7 @@ export class ApplicationService {
   }
   /** 生成操作转交会话取消；预览或发布只在可取消的构建阶段触发中止，不把已开始的切换冒充可撤销。 */
   async cancel(userId: string, appId: string, operationId: string) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const operation = await this.store.operation(userId, appId, operationId);
     if (!["queued", "running"].includes(operation.state))
       return { terminal: true };
@@ -1073,7 +1073,7 @@ export class ApplicationService {
   }
   /** 明确重试状态核对，不重放模型请求；只有容器、网关、源码均确认后才释放占位。 */
   async reconcile(userId: string, appId: string) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const app = await this.store.owned(userId, appId);
     const operations = await this.store.active(appId);
     if (operations.some((operation) => this.tasks.has(operation.id)))
@@ -1295,7 +1295,7 @@ export class ApplicationService {
     requestId: string,
     expected: number,
   ) {
-    await this.allowed(userId);
+    await this.requireCreator(userId);
     const result = await this.store.begin(
       userId,
       appId,

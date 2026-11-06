@@ -17,7 +17,7 @@ export class ApplicationAnalysis {
   }
 
   async scope(owner: string, appId: string) {
-    await this.apps.sessions.identity.require(owner);
+    await this.apps.requireCreator(owner);
     const app = await this.apps.store.owned(owner, appId);
     if (app.status !== "active") fail(409, "APPLICATION_NOT_ACTIVE");
     const observation = this.apps.observation;

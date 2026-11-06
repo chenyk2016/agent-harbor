@@ -227,6 +227,26 @@ try {
   assert.match(JSON.stringify(usedReport), /pageViews[^0-9]*3/);
   assert.equal(frozen.environment, "production");
   assert.equal((await request(reportPath, "other")).status, 404);
+  assert.equal(normal.analysisEnabled, true);
+  apps.options.creators.delete("owner");
+  try {
+    const denied = await Promise.all([
+      request(prefix + "/messages", "owner", "POST", { clientMessageId: randomUUID(), text: "改应用", expectedHeadRevisionId: null }),
+      request(prod),
+      request(prod, "owner", "POST", { clientMessageId: randomUUID(), text: "问数据" }),
+      request(prefix + "/analysis/production/events?after=0"),
+      request(reportPath),
+    ]);
+    for (const response of denied) {
+      assert.equal(response.status, 403);
+      assert.equal((await response.json()).error, "APPLICATION_CREATOR_NOT_ENABLED");
+    }
+    assert.equal((await (await request(prefix)).json()).analysisEnabled, false);
+  } finally {
+    apps.options.creators.add("owner");
+  }
+  assert.equal((await request(reportPath)).status, 200);
+  console.log("PASS shared creator permission gates editing, analysis history, submissions, events and reports");
   assert.equal((await request(`/applications/${sibling}/observability/reports/${report.reportId}`)).status, 404);
   assert.equal((await request(`/applications/${external}/analysis/production/messages`)).status, 404);
   assert.equal((await request("/sessions/" + message.sessionId)).status, 404);
