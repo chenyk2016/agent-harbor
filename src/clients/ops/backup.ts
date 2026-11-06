@@ -89,6 +89,14 @@ export async function backup(c: Config, destination: string) {
     await stopped(c);
     const p = new Pool({ connectionString: c.env.AH_DATABASE_URL, max: 1 });
     try {
+      // Older sources can still be backed up before applying the preview runtime migration.
+      const runtimeColumn = await p.query(`SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'app_deployments' AND column_name = 'runtimeBackend'`);
+      if (runtimeColumn.rowCount) {
+        const pending = await p.query(`SELECT 1 FROM app_deployments
+          WHERE "runtimeBackend" <> 'docker' AND ("observedState" <> 'stopped' OR "desiredState" <> 'stopped') LIMIT 1`);
+        requireThat(!pending.rowCount, "STOP_ALL_MANAGED_PREVIEWS_BEFORE_BACKUP");
+      }
       requireThat(
         Number(
           (

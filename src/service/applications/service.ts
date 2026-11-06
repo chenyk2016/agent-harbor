@@ -1,3 +1,8 @@
+import { PreviewAccess } from "./preview-access.js";
+import { OpenSandboxPreviewProvider } from "../../opensandbox/preview-provider.js";
+import { applicationPreviewClient } from "../../opensandbox/client.js";
+import { stopAndRemove } from "../../runtime/providers/contracts.js";
+import { verifyPreview } from "../../runtime/providers/preview.js";
 /** 应用流程协调器：只组合现有会话、固定源码、Builder、数据与入口，不实现第二套Agent循环。 */
 import {
   ObservationService,
@@ -49,6 +54,7 @@ export interface ApplicationOptions {
   downloadProxy?: string;
   observation?: ObservationOptions;
   visitorAuth?: VisitorAuthOptions;
+  openSandboxPreview?: { appIds: Set<string>; origin?: URL; apiKey?: string };
 }
 /** 给模型的应用开发约定：限定修改位置、数据声明和平台接口。实际权限与数据校验仍由运行器及服务端执行。 */
 const instructions = `你是应用创建助理。当前工作区是平台标准React/TypeScript应用模板。
@@ -89,6 +95,9 @@ export class ApplicationService {
   readonly builder: ApplicationBuilder;
   readonly data: ApplicationData;
   readonly driver: AppDockerDriver;
+  readonly previewAccess = new PreviewAccess(this);
+  private openSandbox?: OpenSandboxPreviewProvider;
+  private openSandboxClient?: ReturnType<typeof applicationPreviewClient>;
   // 以下 Map 记录本进程工作及完成凭据；可恢复事实保存在 ApplicationStore。
   private tasks = new Map<string, Promise<void>>();
   private aborts = new Map<string, AbortController>();
@@ -148,6 +157,12 @@ export class ApplicationService {
       options.downloadProxy,
     );
     this.driver = this.builder.driver;
+    const openSandbox = options.openSandboxPreview;
+    if (openSandbox?.origin && openSandbox.apiKey) {
+      this.openSandboxClient = applicationPreviewClient(openSandbox.origin, openSandbox.apiKey);
+      this.openSandbox = new OpenSandboxPreviewProvider(this.openSandboxClient, this.driver,
+        join(options.root, "opensandbox-preview"), openSandbox.origin);
+    }
     this.data = new ApplicationData(options.root, options.dataAdminUrl);
     sessions.onUserClose = (userId) => this.suspendUser(userId);
     sessions.applicationWriteGuard = async (sessionId, message) => {
@@ -647,9 +662,19 @@ export class ApplicationService {
     epoch: number,
   ) {
     const currentEndpoint = await this.store.endpoint(operation.appId, artifact.target);
-    const previous = currentEndpoint.appliedDeploymentId
-      ? (await this.store.deployment(currentEndpoint.appliedDeploymentId))?.spec?.visitorAuth
-      : undefined;
+    const current = currentEndpoint.appliedDeploymentId
+      ? await this.store.deployment(currentEndpoint.appliedDeploymentId) : undefined;
+    const previous = current?.spec?.visitorAuth;
+    const selected = artifact.target === "preview" && this.options.openSandboxPreview?.appIds.has(operation.appId);
+    const backend = selected ? "opensandbox-preview" : "docker";
+    if (selected && !this.openSandbox) fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
+    if (selected && (await this.store.deployments()).some(deployment =>
+      deployment.appId !== operation.appId && deployment.runtimeBackend === "opensandbox-preview" &&
+      (deployment.observedState !== "stopped" || deployment.desiredState !== "stopped")))
+      fail(409, "APPLICATION_OPENSANDBOX_PILOT_OCCUPIED");
+    if (current && current.runtimeBackend !== backend) fail(409, "APPLICATION_PREVIEW_PAUSE_REQUIRED");
+    const ownerOnly = artifact.target === "preview" && (selected || (await this.store.deployments(operation.appId))
+      .some(deployment => deployment.spec?.ownerOnly));
     const protections = await this.store.authProtection(operation.appId);
     const stored = protections.find(policy => policy.environment === artifact.target);
     const protectedBefore = !!(previous || stored?.enabled);
@@ -681,6 +706,8 @@ export class ApplicationService {
     const visitorAuth = providers ? await this.visitorAuth!.provision(
       operation.appId, operation.ownerId, artifact.target, providers,
     ) : undefined;
+    if (ownerOnly && !visitorAuth?.previewParentOrigin)
+      fail(409, "APPLICATION_PRIVATE_PREVIEW_REQUIRES_LOGIN");
     await this.store.progress(operation.id, "running", "preparing_data");
     let state: DataEnvironment;
     if (operation.kind === "rollback") {
@@ -701,6 +728,7 @@ export class ApplicationService {
       artifact.target,
       id,
       epoch,
+      backend,
     );
     await this.store.progress(operation.id, "running", "starting_container", {
       deploymentId: id,
@@ -713,21 +741,24 @@ export class ApplicationService {
         id,
         revision.manifest.analytics,
       );
-      const deployment = await this.driver.create(
-        artifact,
-        id,
-        this.data.connection(state, false, this.options.databaseHost),
-        observation,
-        visitorAuth,
-      );
-      await this.driver.start(deployment);
+      const databaseUrl = this.data.connection(state, false, this.options.databaseHost);
+      let deployment: AppDeployment;
+      if (selected) {
+        const runtime = await this.openSandbox!.create({ build: artifact, deploymentId: id, databaseUrl, observation, visitorAuth });
+        deployment = { id, appId: artifact.appId, build: artifact, environment: artifact.target,
+          hostPort: Number(this.options.openSandboxPreview!.origin!.port), container: "", runtime, visitorAuth, ownerOnly: true };
+      } else {
+        deployment = await this.driver.create(artifact, id, databaseUrl, observation, visitorAuth);
+        if (ownerOnly) deployment.ownerOnly = true;
+        await this.driver.start(deployment);
+      }
       await this.store.deploymentState(id, "starting", deployment);
-      await this.driver.healthy(deployment);
+      await this.healthyDeployment(deployment);
       await this.store.deploymentState(id, "healthy", deployment);
       return deployment;
     } catch (error) {
       try {
-        await this.driver.destroy("ah-app-" + id);
+        await this.destroyDeployment((await this.store.deployment(id))!);
         await this.store.deploymentState(id, "stopped", undefined, "stopped");
       } catch {
         await this.store.deploymentState(id, "unknown");
@@ -735,6 +766,36 @@ export class ApplicationService {
       throw error;
     }
   }
+  async healthyDeployment(spec: AppDeployment, timeout?: number) {
+    if (!spec.runtime) return this.driver.healthy(spec, timeout);
+    if (!this.openSandbox) fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
+    const endpoint = await this.openSandbox.resolvePrivateEndpoint(spec.runtime);
+    await verifyPreview(endpoint, { build: spec.build, deploymentId: spec.id, visitorAuth: spec.visitorAuth }, timeout);
+  }
+
+  async destroyDeployment(deployment: NonNullable<Awaited<ReturnType<ApplicationStore["deployment"]>>>) {
+    if (deployment.runtimeBackend === "docker") {
+      const name = deployment.spec?.container ?? "ah-app-" + deployment.id;
+      const state = await this.driver.inspect(name);
+      if (state && (state.Config.Labels["harbor.app.id"] !== deployment.appId ||
+          state.Config.Labels["harbor.app.deployment"] !== deployment.id))
+        throw new Error("APPLICATION_RESOURCE_OWNERSHIP_MISMATCH");
+      return this.driver.destroy(name);
+    }
+    if (deployment.runtimeBackend !== "opensandbox-preview" || !this.openSandbox)
+      fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
+    if (deployment.observedState === "stopped" && deployment.desiredState === "stopped") return;
+    const found = await this.openSandbox.findOwned(deployment.id);
+    const recorded = deployment.spec?.runtime;
+    if (!recorded && !found.length) fail(503, "APPLICATION_OPENSANDBOX_CREATE_UNCONFIRMED");
+    if (recorded && !found.some(ref => ref.resourceId === recorded.resourceId) &&
+        await this.openSandbox.inspect(recorded) !== "absent")
+      fail(503, "APPLICATION_RESOURCE_OWNERSHIP_MISMATCH");
+    for (const ref of found) await stopAndRemove(this.openSandbox, ref);
+    if ((await this.openSandbox.findOwned(deployment.id)).length)
+      fail(503, "APPLICATION_OPENSANDBOX_STOP_UNCONFIRMED");
+  }
+
   /** 串行切换一个应用入口并核对代次；确认新路由后才清理旧实例，外部状态不明时保留待核对状态。 */
   private async switchEndpoint(
     operation: ApplicationOperation,
@@ -775,15 +836,15 @@ export class ApplicationService {
         expected + 1,
         deployment?.id ?? null,
       );
-      if (deployment) await this.driver.activate(deployment);
+      if (deployment && !deployment.runtime) await this.driver.activate(deployment);
       if (
         before.appliedDeploymentId &&
         before.appliedDeploymentId !== deployment?.id
       ) {
         const old = await this.store.deployment(before.appliedDeploymentId);
-        if (old?.spec) {
+        if (old) {
           try {
-            await this.driver.destroy(old.spec.container);
+            await this.destroyDeployment(old);
             await this.store.deploymentState(
               old.id,
               "stopped",
@@ -804,7 +865,7 @@ export class ApplicationService {
     } catch (error) {
       if (changed) await this.store.uncertain(operation.appId, environment);
       else if (deployment) {
-        await this.driver.destroy(deployment.container);
+        await this.destroyDeployment((await this.store.deployment(deployment.id))!);
         await this.store.deploymentState(
           deployment.id,
           "stopped",
@@ -1015,10 +1076,12 @@ export class ApplicationService {
         commit: source.commit,
       })),
       endpoints: endpoints.map((endpoint) => {
-        const auth = deployments.find(item => item.id === endpoint.appliedDeploymentId)?.spec?.visitorAuth;
+        const deployment = deployments.find(item => item.id === endpoint.appliedDeploymentId)?.spec;
+        const auth = deployment?.visitorAuth;
         return {
           ...endpoint,
           requiresLogin: !!auth,
+          ...(deployment?.ownerOnly ? { ownerOnly: true } : {}),
           previewParentOrigin: endpoint.environment === "preview" &&
             auth?.previewParentOrigin === this.visitorAuth?.options.workbenchOrigin
             ? auth?.previewParentOrigin : undefined,
@@ -1162,9 +1225,7 @@ export class ApplicationService {
       const retained = new Set(wanted.map((target) => target.id));
       for (const deployment of await this.store.deployments(appId))
         if (!retained.has(deployment.id)) {
-          await this.driver.destroy(
-            deployment.spec?.container ?? "ah-app-" + deployment.id,
-          );
+          await this.destroyDeployment(deployment);
           await this.store.deploymentState(
             deployment.id,
             "stopped",
@@ -1216,9 +1277,7 @@ export class ApplicationService {
           );
         }
         for (const deployment of await this.store.deployments(app.id)) {
-          await this.driver.destroy(
-            deployment.spec?.container ?? "ah-app-" + deployment.id,
-          );
+          await this.destroyDeployment(deployment);
           await this.store.deploymentState(
             deployment.id,
             "stopped",
@@ -1256,14 +1315,21 @@ export class ApplicationService {
         if (target.appId !== endpoint.appId || target.environment !== environment ||
             target.spec.appId !== endpoint.appId || target.spec.environment !== environment)
           fail(503, "APPLICATION_DEPLOYMENT_UNCONFIRMED");
-        spec = await this.driver.refresh(target.spec);
+        if (target.runtimeBackend === "opensandbox-preview") {
+          if (!this.openSandbox || !target.spec.runtime) fail(503, "APPLICATION_OPENSANDBOX_UNAVAILABLE");
+          const upstream = await this.openSandbox.resolvePrivateEndpoint(target.spec.runtime);
+          spec = { ...target.spec, hostPort: Number(upstream.url.port) };
+        } else {
+          if (target.runtimeBackend !== "docker" || target.spec.runtime) fail(503, "APPLICATION_DEPLOYMENT_UNCONFIRMED");
+          spec = await this.driver.refresh(target.spec);
+        }
         await this.store.deploymentState(target.id, "starting", spec);
-        await this.driver.healthy(spec, timeout);
+        await this.healthyDeployment(spec, timeout);
         await this.store.deploymentState(target.id, "healthy", spec);
       }
       await this.options.edge.replaceEndpoint(endpoint.appId, environment, spec);
       await this.store.observed(endpoint.appId, environment, endpoint.generation, endpoint.desiredDeploymentId);
-      if (spec) await this.driver.activate(spec);
+      if (spec && !spec.runtime) await this.driver.activate(spec);
       return spec;
     } catch (error) {
       // 失效旧端口可能已被别的容器复用；不把未知目标继续公开，也不删除其他应用的路由。
@@ -1391,5 +1457,6 @@ export class ApplicationService {
     await this.edges;
     await this.observation?.close();
     await this.data.close();
+    await this.openSandboxClient?.close();
   }
 }

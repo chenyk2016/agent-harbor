@@ -268,7 +268,7 @@ export class ObservationService {
         this.sampled.set(deployment.id, Date.now());
         let healthy = false;
         try {
-          await this.applications.driver.healthy(deployment.spec);
+          await this.applications.healthyDeployment(deployment.spec);
           healthy = true;
         } catch {}
         await this.store.ingest(binding, "host", {
@@ -277,7 +277,7 @@ export class ObservationService {
           occurredAt: Date.now(),
           properties: { healthy },
         });
-        if (healthy)
+        if (healthy && !deployment.spec.runtime)
           try {
             const output = await this.applications.driver.command(
               [

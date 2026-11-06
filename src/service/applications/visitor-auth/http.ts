@@ -13,6 +13,7 @@ import {
   principal,
 } from "../../http/shared.js";
 import { fail, ServiceError } from "../../types.js";
+import { ownerPreviewCookie, ownerPreviewSeconds, type PreviewAccess } from "../preview-access.js";
 import type { ApplicationService } from "../service.js";
 import type { AppEnvironment } from "../data.js";
 import { requireAppId } from "../source-store.js";
@@ -236,7 +237,7 @@ const visitorErrors: ErrorRequestHandler = (
 };
 
 /** These routes have their own host and session boundary, separate from the management API. */
-export function createVisitorRouter(service: VisitorAuthService) {
+export function createVisitorRouter(service: VisitorAuthService, ownerPreview?: PreviewAccess) {
   const router = Router({ caseSensitive: true });
   const authHost = new URL(service.options.authOrigin).host;
   router.use((_request, response, next) => {
@@ -350,6 +351,28 @@ export function createVisitorRouter(service: VisitorAuthService) {
     const value = cookie(request, sessionCookie);
     if (value) await service.logout(scope, value);
     setCookie(response, sessionCookie, "", 0);
+    response.status(204).end();
+  });
+
+  router.post("/preview-access/:id/:deployment", express.text({ limit: "1kb" }), async (request, response) => {
+    if (!ownerPreview) fail(404, "NOT_FOUND");
+    const appId = requireAppId(parameter(request, "id"));
+    const deployment = requireAppId(parameter(request, "deployment"));
+    const origin = request.get("origin");
+    const access = await ownerPreview.exchange(appId, deployment, request.get("host") ?? "", origin, token(request.body));
+    response.vary("Origin").set({
+      "Access-Control-Allow-Origin": origin!,
+      "Access-Control-Allow-Credentials": "true",
+    });
+    setCookie(response, ownerPreviewCookie, access, ownerPreviewSeconds);
+    response.status(204).end();
+  });
+  router.get("/preview-access/:id/:deployment", async (request, response) => {
+    if (!ownerPreview) fail(404, "NOT_FOUND");
+    await ownerPreview.authorize(requireAppId(parameter(request, "id")),
+      requireAppId(parameter(request, "deployment")), request.get("host") ?? "",
+      cookie(request, ownerPreviewCookie),
+      request.get("x-harbor-preview-websocket") === "1" ? request.get("origin") ?? "" : undefined);
     response.status(204).end();
   });
 

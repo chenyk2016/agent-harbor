@@ -1,6 +1,7 @@
 /** 控制面验证：真实HTTP/PG/Git，执行器、构建和网关为受控替身。真实Docker另行验证。 */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer, request } from "node:http";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { parseAppAuth, type AppAuthPolicy } from "../src/service/applications/visitor-auth/policy.js";
 import { applicationLoginCommand } from "../src/shared/application-skills.js";
@@ -103,6 +104,7 @@ async function fixture(withVisitorAuth: boolean | "email" = false) {
     edge,
     ...(keys ? { visitorAuth: {
       authOrigin: "https://auth.example.com", appDomain: "apps.example.net",
+      workbenchOrigin: "https://studio.example.net",
       pocketbase: "http://127.0.0.1:1", pocketbaseToken: "fixture-only",
       ...(withVisitorAuth === true ? { googleId: "fixture-id", googleSecret: "fixture-only" } : {}),
       edgeDial: "127.0.0.1:1", edgeToken: "fixture-only",
@@ -186,6 +188,7 @@ async function fixture(withVisitorAuth: boolean | "email" = false) {
   }
   return {
     root,
+    url,
     store,
     service,
     manager,
@@ -876,6 +879,95 @@ test("new generated applications stay public when no managed login is configured
     const current = await f.store.owned("a", app.id);
     assert.equal((await f.store.revision(app.id, current.headRevisionId!)).manifest.auth, undefined);
   } finally {
+    await f.close();
+  }
+});
+
+test("opt-in preview records provider, gates owner access and requires stop before rollback", async () => {
+  const f = await fixture("email");
+  const resources = new Map<string, { buildId: string; deploymentId: string }>();
+  const probe = createServer((request, response) => {
+    const id = request.url?.split("/")[1];
+    const record = id && resources.get(id);
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ ...record, visitorAuthVersion: 1 }));
+  });
+  await new Promise<void>(resolve => probe.listen(0, "127.0.0.1", resolve));
+  const port = (probe.address() as { port: number }).port;
+  try {
+    f.service.queuePreview = () => {};
+    const created = await f.service.create("a", "private", "", randomUUID());
+    const appId = created.app.id;
+    await f.done(appId, created.operation.id);
+    f.authByPrompt.set("set private preview", { mode: "required", providers: ["email_password"] });
+    const detail = await f.service.detail("a", appId);
+    const operation = await f.service.generate("a", appId, "set private preview", randomUUID(), detail.app.headRevisionId);
+    assert.equal((await f.done(appId, operation.operation.id)).state, "succeeded");
+    const revision = (await f.store.revisions(appId))[0];
+    const appIds = new Set([appId]);
+    f.service.options.openSandboxPreview = { origin: new URL(`http://127.0.0.1:${port}`), appIds };
+    Object.assign(f.service, { openSandbox: {
+      async create(launch: import("../src/runtime/providers/preview.js").PreviewLaunch) {
+        const resourceId = randomUUID();
+        assert.equal((await f.store.deployment(launch.deploymentId))?.runtimeBackend, "opensandbox-preview");
+        resources.set(resourceId, { buildId: launch.build.id, deploymentId: launch.deploymentId });
+        return { backendId: "opensandbox-preview", resourceId };
+      },
+      async findOwned(id: string) {
+        return [...resources].filter(([, item]) => item.deploymentId === id)
+          .map(([resourceId]) => ({ backendId: "opensandbox-preview", resourceId }));
+      },
+      async resolvePrivateEndpoint(ref: { resourceId: string }) { return { url: new URL(`http://127.0.0.1:${port}/${ref.resourceId}`) }; },
+      async stopAndConfirm(ref: { resourceId: string }) { resources.delete(ref.resourceId); },
+      async remove() {},
+    } });
+    const deploy = async () => {
+      const endpoint = await f.store.endpoint(appId, "preview");
+      const result = await f.service.deploy("a", appId, revision.id, "preview", randomUUID(), endpoint.generation);
+      return f.done(appId, result.operation.id);
+    };
+    assert.equal((await deploy()).state, "succeeded");
+    const endpoint = await f.store.endpoint(appId, "preview");
+    const id = endpoint.appliedDeploymentId!;
+    assert.equal((await f.store.deployment(id))?.spec?.ownerOnly, true);
+    const endpointUrl = `/applications/${appId}/preview-access`;
+    await assert.rejects(f.b.request(endpointUrl, "POST", { deploymentId: id }), code("APPLICATION_NOT_FOUND"));
+    const { ticket } = await f.a.request<{ ticket: string }>(endpointUrl, "POST", { deploymentId: id });
+    const host = `${appId}-preview.apps.example.net`;
+    const gate = f.url + `/__harbor/visitor/preview-access/${appId}/${id}`;
+    const headers = { Host: host, Origin: "https://studio.example.net", "X-Harbor-Edge-Proof": "fixture-only" };
+    const access = (extra: Record<string, string> = {}, body?: string) =>
+      new Promise<{ status: number; cookie?: string }>((resolve, reject) => {
+        const req = request(gate, { method: body ? "POST" : "GET",
+          headers: { ...headers, ...extra, ...(body ? { "Content-Type": "text/plain" } : {}) },
+        }, res => {
+          res.resume();
+          res.once("end", () => resolve({ status: res.statusCode!, cookie: res.headers["set-cookie"]?.[0]?.split(";")[0] }));
+        });
+        req.on("error", reject);
+        req.end(body);
+      });
+    assert.equal((await access()).status, 401);
+    const response = await access({}, ticket);
+    assert.equal(response.status, 204);
+    assert.ok(response.cookie);
+    const Cookie = response.cookie;
+    assert.equal((await access({}, ticket)).status, 401);
+    assert.equal((await access({ Cookie })).status, 204);
+    assert.equal((await access({ Cookie, "X-Harbor-Preview-Websocket": "1" })).status, 403);
+    appIds.clear();
+    assert.equal((await deploy()).error, "APPLICATION_PREVIEW_PAUSE_REQUIRED");
+    const pause = await f.service.pausePreview("a", appId, randomUUID(), endpoint.generation);
+    assert.equal((await f.done(appId, pause.operation.id)).state, "succeeded");
+    assert.equal(resources.size, 0);
+    assert.equal((await access({ Cookie })).status, 404);
+    assert.equal((await deploy()).state, "succeeded");
+    const reverted = (await f.store.endpoint(appId, "preview")).appliedDeploymentId!;
+    assert.equal((await f.store.deployment(reverted))?.runtimeBackend, "docker");
+    assert.equal((await f.store.deployment(reverted))?.spec?.ownerOnly, true);
+  } finally {
+    probe.closeAllConnections();
+    await new Promise<void>(resolve => probe.close(() => resolve()));
     await f.close();
   }
 });

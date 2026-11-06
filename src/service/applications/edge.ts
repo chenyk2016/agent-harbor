@@ -42,12 +42,39 @@ function protectedRoutes(deployment: AppDeployment, base: string, auth: VisitorE
   ];
 }
 
+function ownerRoutes(deployment: AppDeployment, base: string, auth: VisitorEdgeOptions, health: unknown[]) {
+  const target = visitorPath + `/preview-access/${deployment.appId}/${deployment.id}`;
+  const forward = (check: boolean, websocket = false) => ({
+    handler: "reverse_proxy",
+    upstreams: [{ dial: auth.edgeDial }],
+    rewrite: { uri: target, ...(check ? { method: "GET" } : {}) },
+    headers: { request: { set: {
+      "X-Harbor-Edge-Proof": [auth.edgeToken],
+      "X-Harbor-Preview-Websocket": [websocket ? "1" : "0"],
+    }, ...(check ? { delete: ["Upgrade", "Connection"] } : {}) } },
+    ...(check ? { handle_response: [{
+      match: { status_code: [2] },
+      routes: [{ handle: [{ handler: "vars", harbor_preview_allowed: true }] }],
+    }] } : {}),
+  });
+  return [
+    { match: [{ path: [base + "__harbor/health"], method: ["GET"],
+      header: { "X-Harbor-Preview-Probe": [auth.edgeToken] } }], handle: health, terminal: true },
+    { match: [{ path: [base + "__harbor/preview-access"], method: ["POST"] }],
+      handle: [forward(false)], terminal: true },
+    { group: "harbor-preview-owner", match: [{ header: { Upgrade: ["websocket"] } }],
+      handle: [forward(true, true)] },
+    { group: "harbor-preview-owner", handle: [forward(true)] },
+  ];
+}
+
 /** 根据已校验的部署描述生成 Caddy 路由：补齐尾斜杠、代理应用端口并移除平台身份相关请求头。 */
 export function applicationRoutes(
   deployments: AppDeployment[],
   upstreamHost: string,
   visitor?: VisitorEdgeOptions,
   publicOrigin?: string,
+  openSandboxPort?: number,
 ) {
   if (!["127.0.0.1", "host.docker.internal"].includes(upstreamHost))
     throw new Error("INVALID_EDGE_UPSTREAM_HOST");
@@ -75,11 +102,21 @@ export function applicationRoutes(
       throw new Error("APPLICATION_AUTH_EDGE_UNAVAILABLE");
     const origin = protectedApp?.origin ?? (visitor ? publicOrigin : undefined);
     const host = origin ? { host: [new URL(origin).hostname] } : {};
+    const runtime = deployment.runtime;
+    if (runtime) {
+      requireAppId(runtime.resourceId);
+      if (runtime.backendId !== "opensandbox-preview" || deployment.hostPort !== openSandboxPort ||
+          upstreamHost !== "127.0.0.1" || !deployment.ownerOnly)
+        throw new Error("INVALID_OPENSANDBOX_UPSTREAM");
+    }
+    if (deployment.ownerOnly && (!protectedApp?.previewParentOrigin || deployment.environment !== "preview" || !visitor))
+      throw new Error("APPLICATION_PREVIEW_AUTH_UNAVAILABLE");
     const proxy = {
       handler: "reverse_proxy",
       upstreams: [{ dial: `${upstreamHost}:${deployment.hostPort}` }],
+      ...(runtime ? { rewrite: { uri: `/v1/sandboxes/${runtime.resourceId}/proxy/3000{http.request.uri}` } } : {}),
       headers: {
-        request: { delete: ["Cookie", "Authorization", "X-Harbor-*",
+        request: { delete: ["Cookie", "Authorization", "X-Harbor-*", "Open-Sandbox-Api-Key", "X-Execd-Access-Token",
           ...(!protectedApp ? ["X-App-Visitor-Assertion"] : [])] },
         response: { delete: ["Set-Cookie", "Service-Worker-Allowed", "X-App-Visitor-Assertion"] },
       },
@@ -102,6 +139,7 @@ export function applicationRoutes(
         handle: protectedApp ? [{
           handler: "subroute",
           routes: [
+            ...(deployment.ownerOnly ? ownerRoutes(deployment, base, visitor!, forward) : []),
             { handle: [{ handler: "headers", request: { delete: ["X-Harbor-*", "X-App-Visitor-Assertion"] } }] },
             ...protectedRoutes(deployment, base, visitor!),
             { handle: forward },
@@ -123,6 +161,7 @@ export class CaddyApplicationEdge {
     readonly upstreamHost = "127.0.0.1",
     readonly routeId = "harbor-application-routes",
     readonly visitor?: VisitorEdgeOptions,
+    readonly openSandboxPort?: number,
   ) {
     if (adminOrigin.startsWith("unix:/"))
       this.socketPath = adminOrigin.slice(5);
@@ -225,12 +264,12 @@ export class CaddyApplicationEdge {
   async matches(deployments: AppDeployment[]) {
     return (
       canonical((await this.actual()).routes) ===
-      canonical(applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin))
+      canonical(applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort))
     );
   }
   /** 用给定部署集合替换整棵应用路由子树并核对这些实例；单应用变更应使用 replaceEndpoint。 */
   async replace(deployments: AppDeployment[]) {
-    return this.update(() => applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin), deployments);
+    return this.update(() => applicationRoutes(deployments, this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort), deployments);
   }
   /** CAS仍保护共享子树，但只替换一个端点；其他应用的未知/失效路由保持原样，不参与本次健康确认。 */
   async replaceEndpoint(appId: string, environment: "preview" | "production", deployment: AppDeployment | null) {
@@ -239,7 +278,7 @@ export class CaddyApplicationEdge {
         (deployment && (deployment.appId !== appId || deployment.environment !== environment)))
       throw new Error("INVALID_EDGE_DEPLOYMENT");
     const base = `/${environment === "preview" ? "preview" : "apps"}/${appId}/`;
-    const replacement = applicationRoutes(deployment ? [deployment] : [], this.upstreamHost, this.visitor, this.publicOrigin);
+    const replacement = applicationRoutes(deployment ? [deployment] : [], this.upstreamHost, this.visitor, this.publicOrigin, this.openSandboxPort);
     return this.update(routes => [
       ...routes.filter(route => {
         const paths = (route as { match?: { path?: string[] }[] })?.match;
@@ -289,7 +328,8 @@ export class CaddyApplicationEdge {
         for (const deployment of verify) {
           const health = await fetch(
             (deployment.visitorAuth?.origin ?? this.publicOrigin) + deployment.build.basePath + "__harbor/health",
-            { signal: AbortSignal.timeout(5000), redirect: "error" },
+            { signal: AbortSignal.timeout(5000), redirect: "error",
+              ...(deployment.ownerOnly ? { headers: { "X-Harbor-Preview-Probe": this.visitor!.edgeToken } } : {}) },
           );
           if (!health.ok) throw new Error("EDGE_DEPLOYMENT_UNCONFIRMED:HTTP_" + health.status);
           const body = (await health.json().catch(() => null)) as { deploymentId?: string; visitorAuthVersion?: number } | null;

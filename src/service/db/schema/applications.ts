@@ -95,6 +95,7 @@ export const appDeployments = pgTable("app_deployments", {
   desiredState: text("desiredState").notNull(),
   observedState: text("observedState").notNull(),
   spec: jsonb("spec").$type<AppDeployment>(),
+  runtimeBackend: text("runtimeBackend").notNull().default("docker"),
   epoch: integer("epoch").notNull(),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),

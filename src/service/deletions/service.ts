@@ -268,13 +268,7 @@ export class ResourceDeletions {
       control,
       ...(await Promise.allSettled([
         ...builds.map((build) => destroy("ah-app-build-" + build.id, build.id)),
-        ...deployments.map((deployment) =>
-          destroy(
-            deployment.spec?.container ?? "ah-app-" + deployment.id,
-            undefined,
-            deployment.id,
-          ),
-        ),
+        ...deployments.map(deployment => apps.destroyDeployment(deployment)),
       ])),
     ];
     const survivors = await apps.driver.command([

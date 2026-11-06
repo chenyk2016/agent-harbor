@@ -18,6 +18,7 @@ export type PreviewPhase =
 export function PreviewPanel({
   preview,
   previewVersion,
+  grantPreview,
   headVersion,
   mobile,
   refresh,
@@ -28,6 +29,7 @@ export function PreviewPanel({
   onShowOperations,
 }: {
   preview: Endpoint;
+  grantPreview: (deploymentId: string, signal: AbortSignal) => Promise<void>;
   previewVersion?: number;
   headVersion?: number;
   mobile: boolean;
@@ -53,9 +55,11 @@ export function PreviewPanel({
     const controller = new AbortController();
     const check = async () => {
       try {
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
+        if (preview.ownerOnly && deployment) await grantPreview(deployment, signal);
         const response = await fetch(new URL("__harbor/auth/embedded-session", embeddedUrl), {
           credentials: "include",
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
+          signal,
         });
         if (!controller.signal.aborted)
           setProbe({ key: probeKey, state: response.status === 204 ? "signed-in" : response.status === 401 ? "login" : "failed" });
@@ -66,7 +70,7 @@ export function PreviewPanel({
     void check();
     const timer = window.setInterval(check, 60000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [embeddedUrl, probeKey]);
+  }, [embeddedUrl, probeKey, preview.ownerOnly, deployment, grantPreview]);
   const outdated =
     ready && headVersion !== undefined && previewVersion !== headVersion;
   const copy =

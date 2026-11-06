@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AppDockerDriver } from "../service/applications/docker.js";
 import { requireAppId } from "../service/applications/source-store.js";
@@ -31,7 +31,7 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
   ) {
     if (managementOrigin.protocol !== "http:" || managementOrigin.hostname !== "127.0.0.1" ||
         managementOrigin.username || managementOrigin.password || managementOrigin.href !== managementOrigin.origin + "/")
-      throw new Error("Pilot requires a loopback management endpoint");
+      throw new Error("OpenSandbox preview requires a loopback management endpoint");
   }
 
   private id(ref: EnvironmentRef) {
@@ -44,7 +44,7 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
     const rows = await this.docker.command(["ps", "-a", "--filter", "label=" + label,
       "--filter", "label=" + sandboxLabel, "--format", "{{json .}}"]);
     return rows ? rows.split("\n").map(row => JSON.parse(row) as {
-      Labels: string; State: string;
+      ID: string; Labels: string; State: string;
     }) : [];
   }
 
@@ -61,17 +61,20 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
       });
   }
 
-  async create({ build, deploymentId, databaseUrl }: PreviewLaunch) {
+  async create({ build, deploymentId, databaseUrl, visitorAuth, observation }: PreviewLaunch) {
     requireAppId(build.appId);
     requireAppId(deploymentId);
     if (build.target !== "preview" || build.basePath !== `/preview/${build.appId}/` ||
         !/^sha256:[a-f0-9]{64}$/.test(build.imageId)) throw new Error("Invalid preview build");
     if ((await this.findOwned(deploymentId)).length) throw new Error("Preview already exists");
+    await mkdir(this.configDirectory, { recursive: true, mode: 0o700 });
     const configPath = join(this.configDirectory, deploymentId + ".json");
     // The private file contains only this app's database credential and deployment identity.
     await writeFile(configPath, JSON.stringify({
       appId: build.appId, revisionId: build.revisionId, buildId: build.id,
       deploymentId, basePath: build.basePath, databaseUrl,
+      ...(visitorAuth ? { visitorAuth, environment: build.target } : {}),
+      ...(observation ? { observation } : {}),
     }), { flag: "wx", mode: 0o444 });
     const resourceId = await this.client.create({
       image: build.imageId, configPath,
@@ -109,8 +112,27 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
     if (await this.inspect(ref) !== "absent") throw new Error("Sandbox deletion unconfirmed");
   }
 
+  /** Check engine state, because a correct proxy URL says nothing about raw host port exposure. */
+  private async requirePrivateRuntime(ref: EnvironmentRef) {
+    const rows = await this.containers(sandboxLabel + "=" + this.id(ref));
+    if (rows.length !== 1 || !rows[0].Labels.split(",").includes(ownerLabel + "=" + this.docker.owner))
+      throw new Error("Sandbox ownership unconfirmed");
+    const [container] = JSON.parse(await this.docker.command(["inspect", rows[0].ID]));
+    const host = container?.HostConfig;
+    const networks = Object.keys(container?.NetworkSettings?.Networks ?? {});
+    const bindings = Object.values(container?.NetworkSettings?.Ports ?? {}).flat() as
+      ({ HostIp: string } | null)[];
+    if (container?.State?.Running !== true || networks.length !== 1 ||
+        ["host", "bridge", "none"].includes(networks[0]) || host.NetworkMode !== networks[0] ||
+        bindings.length === 0 || bindings.some(binding => binding?.HostIp !== "127.0.0.1") ||
+        host.Privileged !== false || !host.CapDrop?.includes("ALL") ||
+        !host.SecurityOpt?.some((item: string) => item.startsWith("no-new-privileges")) ||
+        container.Config?.User !== "node")
+      throw new Error("OpenSandbox preview network or security profile is not private");
+  }
+
   async resolvePrivateEndpoint(ref: EnvironmentRef) {
-    if (await this.inspect(ref) !== "running") throw new Error("Sandbox is not running");
+    await this.requirePrivateRuntime(ref);
     const id = this.id(ref);
     const url = await this.client.endpoint(id, 3000);
     if (url.origin !== this.managementOrigin.origin ||

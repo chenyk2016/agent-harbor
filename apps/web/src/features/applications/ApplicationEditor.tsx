@@ -124,6 +124,14 @@ function ApplicationEditor({ id }: { id: string }) {
     value.bindUser(listOwner.userId);
     return value;
   }, [id, listOwner.userId]);
+  const grantPreview = useCallback(async (deploymentId: string, signal: AbortSignal) => {
+    const { exchangeUrl, ticket } = await api.request<{ exchangeUrl: string; ticket: string }>(
+      `/applications/${id}/preview-access`, "POST", { deploymentId }, signal);
+    const response = await fetch(exchangeUrl, {
+      method: "POST", body: ticket, credentials: "include", redirect: "error", signal,
+    });
+    if (response.status !== 204) throw new Error("APPLICATION_PREVIEW_ACCESS_REQUIRED");
+  }, [api, id]);
   /** 登录过期时重新加载页面，交回全局身份流程处理。 */
   const expired = useCallback(() => location.reload(), []);
   const bench = useWorkspace(api, listOwner.userId, expired, notify, listOwner);
@@ -822,6 +830,7 @@ function ApplicationEditor({ id }: { id: string }) {
           {mode === "preview" ? (
             <PreviewPanel
               preview={preview}
+              grantPreview={grantPreview}
               previewVersion={previewVersion}
               headVersion={headVersion}
               mobile={mobile}

@@ -27,6 +27,7 @@ export interface Endpoint {
   state: string;
   appliedDeploymentId: string | null;
   requiresLogin?: boolean;
+  ownerOnly?: boolean;
   previewParentOrigin?: string;
   loginProviders?: ("google" | "email_password")[];
   publicReleaseNeedsConfirmation?: boolean;

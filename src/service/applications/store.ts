@@ -497,6 +497,7 @@ export class ApplicationStore {
     environment: AppEnvironment,
     id: string,
     epoch: number,
+    runtimeBackend = "docker",
   ) {
     const [build] = await this.db
       .select()
@@ -517,6 +518,7 @@ export class ApplicationStore {
       buildId,
       environment,
       epoch,
+      runtimeBackend,
       desiredState: "running",
       observedState: "creating",
       createdAt: now,

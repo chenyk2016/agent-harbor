@@ -54,6 +54,12 @@ export function createApplicationRouter(service: ApplicationService) {
       loginProviders: service.creationLoginProviders(),
     }),
   );
+  router.post("/applications/:id/preview-access", ...jsonBody(), async (request, response) => {
+    const appId = uuid(parameter(request, "id"));
+    const deploymentId = uuid(jsonInput(request).deploymentId);
+    const { userId, signal } = principal(response);
+    response.json(await service.previewAccess.issue(userId, signal, appId, deploymentId));
+  });
   router.get("/applications", async (_request, response) =>
     response.json(await service.store.list(principal(response).userId)),
   );

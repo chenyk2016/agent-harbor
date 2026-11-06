@@ -124,7 +124,7 @@ export function createApi(
   app.disable("etag");
   app.set("case sensitive routing", true);
   if (llm && walletEnabled) app.use("/inference", createInferenceRouter(llm, wallet, tracing));
-  if (applications?.visitorAuth) app.use(visitorPath, createVisitorRouter(applications.visitorAuth));
+  if (applications?.visitorAuth) app.use(visitorPath, createVisitorRouter(applications.visitorAuth, applications.previewAccess));
   const api = Router({ caseSensitive: true });
   api.use((_request, response, next) => {
     response.setHeader("Cache-Control", "no-store");

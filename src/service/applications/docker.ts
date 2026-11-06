@@ -1,3 +1,4 @@
+import type { EnvironmentRef } from "../../runtime/providers/contracts.js";
 /** 应用容器独立于Agent Runner：实际镜像/归属核验后才能启停，未知状态不当作已删除。 */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -28,6 +29,9 @@ export interface AppDeployment {
   hostPort: number;
   environment: AppEnvironment;
   visitorAuth?: VisitorDeployment;
+  /** Legacy rows use the existing Docker container name. */
+  runtime?: EnvironmentRef;
+  ownerOnly?: true;
 }
 /** 封装应用构建和运行容器的 Docker 操作，以实例归属标签约束资源，和 Agent 开发容器分开管理。 */
 export class AppDockerDriver {
