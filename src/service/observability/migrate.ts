@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { observationDatabaseUrl } from "./database.js";
+import { observationDatabaseUrl, observationEnabled } from "./database.js";
 export async function migrateObservations(pool: Pool) {
   const c = await pool.connect();
   try {
@@ -33,7 +33,7 @@ export async function migrateObservations(pool: Pool) {
 }
 /** 管理员显式初始化，已托管的实例重复执行时只检查迁移。 */
 export async function setupObservations() {
-  if (process.env.AH_OBSERVATION_ENABLED === "0") return;
+  if (!observationEnabled()) return;
   const url = await observationDatabaseUrl(undefined, true);
   if (!url) throw new Error("Set AH_APP_DATABASE_ADMIN_URL or a separate AH_OBSERVATION_DATABASE_URL");
   const pool = new Pool({ connectionString: url, max: 1, connectionTimeoutMillis: 3000 });

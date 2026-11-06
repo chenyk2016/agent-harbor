@@ -25,7 +25,7 @@
 
 | 配置 | 含义 |
 | --- | --- |
-| `AH_APP_AUTH_ENABLED=1` | 启用访客认证 |
+| `AH_APP_AUTH_ENABLED=0` | 关闭访客认证。省略时，所需配置就绪后自动启用 |
 | `AH_APP_AUTH_ORIGIN`、`AH_APP_AUTH_DOMAIN` | 专用 HTTPS 认证来源及应用域后缀 |
 | `AH_APP_PUBLIC_ORIGIN` | 应用模块使用的管理入口，与认证域和应用域区分 |
 | `AH_APP_AUTH_EDGE_DIAL`、`AH_APP_AUTH_EDGE_TOKEN` | Caddy 到 Harbor 的内部地址与校验密钥 |

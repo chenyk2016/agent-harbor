@@ -13,7 +13,7 @@
 | AH_SERVICE_TOKEN | CLI开发访问密钥，与网关凭证独立 |
 | AH_SERVICE_PORT | 服务本地监听端口，默认4318；始终绑定127.0.0.1 |
 | AH_IDLE_TIMEOUT_MS | 服务任务结束后的空闲回收，默认900000 |
-| AH_TASK_TIMEOUT_MS | 单轮总超时，默认120000；超时强制关闭环境 |
+| AH_TASK_TIMEOUT_MS | 单轮总超时，默认0（无平台总时限）；设为正数后超时会强制关闭环境 |
 | AH_INTERRUPT_TIMEOUT_MS | 原生中断等待时限，默认5000；超时强制关闭 |
 | AH_CAPACITY | 最多打开中的环境数，默认4，包含启动和空闲 |
 | AH_EVIDENCE_DIR | 部分验证脚本的输出位置，默认var/evidence |

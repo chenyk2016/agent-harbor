@@ -23,9 +23,13 @@ function independentDatabase(url: URL) {
   return url.href;
 }
 
+export function observationEnabled() {
+  return !["0", "false"].includes(process.env.AH_OBSERVATION_ENABLED ?? "");
+}
+
 /** 默认库和角色名称绑定应用数据根，密码使用现有主密钥密封。 */
 export async function observationDatabaseUrl(root = applicationDataRoot(), setup = false): Promise<string | undefined> {
-  if (process.env.AH_OBSERVATION_ENABLED === "0") return;
+  if (!observationEnabled()) return;
   const explicit = process.env.AH_OBSERVATION_DATABASE_URL;
   if (explicit) return independentDatabase(new URL(explicit));
 

@@ -42,7 +42,8 @@ test("delivery: explicit empty instance, private configuration, no production en
     const dir = join(root, "instance");
     await configure(dir, "agent-harbor:admin-operations-v28");
     const c = await config(dir);
-    assert.equal(c.env.AH_APPLICATIONS_ENABLED, "0");
+    assert.equal(c.env.AH_APPLICATIONS_ENABLED, undefined);
+    assert.match(c.env.AH_WORKBENCH_AUTH_SECRET!, /^[0-9a-f]{64}$/);
     assert.equal((await lstat(join(dir, "harbor.env"))).mode & 0o077, 0);
     assert.ok(!projectRoot.endsWith("/dist"));
     assert.equal(
@@ -115,7 +116,7 @@ test("delivery: service refuses missing or ambiguous administrator configuration
     const key = randomBytes(32).toString("base64url");
     for (const bootstrapKey of [undefined, key]) {
       const result = spawnSync(process.execPath, ["dist/src/service/server.js"], {
-        env: { ...environment(c), AH_BOOTSTRAP_ADMIN_KEY: bootstrapKey },
+        env: { ...environment(c), AH_WORKBENCH_AUTH_SECRET: undefined, AH_BOOTSTRAP_ADMIN_KEY: bootstrapKey },
         encoding: "utf8",
         timeout: 10_000,
       });

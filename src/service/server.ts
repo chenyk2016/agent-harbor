@@ -30,7 +30,7 @@ import { ApplicationStore } from "./applications/store.js";
 import { applicationOptions } from "./applications/config.js";
 
 import { LlmService } from "./llm/service.js";
-import { llmSettings } from "./llm/client.js";
+import { resolveLlmSettings } from "./llm/client.js";
 import { GatewayUsageSync } from "./llm/usage-sync.js";
 
 import { startInferenceListener } from "./wallet/listener.js";
@@ -47,11 +47,22 @@ let database: DatabaseHandle | undefined;
 let applications: ApplicationService | undefined;
 let tracing: TracingService | undefined;
 try {
-  const llmConfig = llmSettings();
-  const token = llmConfig ? "managed-llm-only" : process.env.AH_GATEWAY_TOKEN;
-  if (!token || token === "replace-with-your-token")
-    throw new Error("Set AH_GATEWAY_TOKEN");
-  const identity = identityFromEnvironment();
+  const { settings: llmConfig, missing, allowLegacyGateway } = (() => {
+    try {
+      return resolveLlmSettings();
+    } catch (error) {
+      const detail = error instanceof Error && /^Invalid AH_[A-Z_]+$/.test(error.message)
+        ? error.message : "Invalid managed gateway configuration";
+      console.error("MODEL_GATEWAY_UNAVAILABLE: " + detail);
+      return { settings: undefined, missing: [], allowLegacyGateway: false };
+    }
+  })();
+  if (missing.length) console.error("MODEL_GATEWAY_CONFIGURATION_REQUIRED: " + missing.join(", "));
+  const legacyToken = allowLegacyGateway ? process.env.AH_GATEWAY_TOKEN : undefined;
+  const token = legacyToken === "replace-with-your-token" ? undefined : legacyToken;
+  if (!llmConfig && !token) console.error("MODEL_GATEWAY_UNAVAILABLE: configure a model gateway to run tasks");
+  const identity = identityFromEnvironment(process.env, !!llmConfig?.walletProxyUrl);
+  for (const issue of identity.issues) console.error(issue);
   const auth = await Auth.load(
     join(serviceDirectory, "access-keys.json"),
   ).catch((error) => {
@@ -69,8 +80,18 @@ try {
     throw new Error("No login credentials. For a new managed instance, set AH_BOOTSTRAP_ADMIN_KEY and run harbor init before starting.");
   // 表结构由受控迁移步骤建立；服务启动只连接，不自动建表或争抢执行迁移。
   database = openDatabase();
-  const workbenchAuth = identity.workbench && new WorkbenchAuth(database.pool, identity.workbench);
-  await workbenchAuth?.checkStorage();
+  let workbenchAuth: WorkbenchAuth | undefined;
+  if (identity.workbench) {
+    try {
+      const candidate = new WorkbenchAuth(database.pool, identity.workbench);
+      await candidate.checkStorage();
+      workbenchAuth = candidate;
+    } catch {
+      console.error("WORKBENCH_AUTH_UNAVAILABLE: check control database migrations");
+    }
+  }
+  if (!configuredKey && !auth.keys.length && !identity.oidc && !workbenchAuth)
+    throw new Error("No login credentials: workbench authentication is unavailable");
   tracing = new TracingService(database.db);
   await tracing.initialize();
   if (tracing.config.state === "invalid") console.error("Langfuse configuration invalid: " + tracing.config.issues.join(","));
@@ -85,7 +106,7 @@ try {
   const manager = new SessionManager(
     store,
     controller,
-    token,
+    token ?? "",
     numberFromEnvironment("AH_IDLE_TIMEOUT_MS", 15 * 60_000),
     numberFromEnvironment("AH_CAPACITY", 4),
   );
@@ -126,21 +147,56 @@ try {
   // Root lock is already held. Confirm legacy Workers stopped before enabling the new native path.
   await recoverLegacyWorkers(serviceDirectory);
   await connections.migrateLegacy();
-  const appOptions = await applicationOptions(root);
+  let applicationsUnavailable: string | undefined;
+  const appOptions = await applicationOptions(root, (feature, reason) => {
+    if (feature === "applications") applicationsUnavailable = reason;
+    console.error(feature + ": " + reason);
+  });
+  const appStore = new ApplicationStore(database.db);
   if (appOptions) {
-    applications = new ApplicationService(
-      new ApplicationStore(database.db),
-      manager,
-      controller,
-      appOptions,
-    );
-    await applications.initialize();
+    const { onUserClose } = manager;
+    let candidate: ApplicationService | undefined;
+    try {
+      candidate = new ApplicationService(appStore, manager, controller, appOptions);
+      await candidate.data.checkReady();
+      await candidate.initialize();
+      applications = candidate;
+    } catch {
+      await candidate?.close().catch(() => console.error("Application cleanup requires attention"));
+      manager.onUserClose = onUserClose;
+      applicationsUnavailable = "Check the application database and Caddy connectivity.";
+      console.error("APPLICATIONS_UNAVAILABLE: " + applicationsUnavailable);
+    }
   }
-  const llm = llmConfig
-    ? new LlmService(database.db, serviceDirectory, llmConfig)
-    : undefined;
-  if (llm) await llm.recover();
-  if (llm) await llm.applyBaseline();
+  if (!applications) {
+    // Disabled applications must not allow editing their development sessions as ordinary chat.
+    manager.applicationWriteGuard = async (sessionId) => {
+      if (await appStore.forSession(sessionId)) fail(503, "APPLICATIONS_UNAVAILABLE");
+    };
+  }
+  let llm: LlmService | undefined;
+  if (llmConfig) {
+    try {
+      const candidate = new LlmService(database.db, serviceDirectory, llmConfig);
+      await candidate.recover();
+      await candidate.applyBaseline();
+      llm = candidate;
+    } catch {
+      console.error("MODEL_GATEWAY_UNAVAILABLE: check the managed gateway and control database");
+    }
+  }
+  let inferenceServer: Awaited<ReturnType<typeof startInferenceListener>> | undefined;
+  if (process.env.AH_INFERENCE_BIND_HOST && llm?.settings.walletProxyUrl) {
+    try {
+      inferenceServer = await startInferenceListener(process.env.AH_INFERENCE_BIND_HOST,
+        numberFromEnvironment("AH_INFERENCE_PORT", 4317), llm, wallet, tracing);
+    } catch {
+      console.error("MODEL_GATEWAY_UNAVAILABLE: check the wallet bridge address and port");
+      llm = undefined;
+    }
+  }
+  if (!llm && workbenchAuth?.settings.registration) workbenchAuth.settings.registration = false;
+  if (!llm && !token) manager.modelSelection = async () => fail(503, "MODEL_GATEWAY_UNAVAILABLE");
   const gatewaySync = llm?.settings.policy ? new GatewayUsageSync(llm) : undefined;
   let syncDone: Promise<void> = Promise.resolve();
   let syncRunning = false;
@@ -153,8 +209,6 @@ try {
   if (gatewaySync) syncUsage();
   const gatewaySyncTimer = gatewaySync ? setInterval(syncUsage, 5_000) : undefined;
   gatewaySyncTimer?.unref();
-  if (identity.workbench?.registration && !llm?.settings.walletProxyUrl)
-    throw new Error("Public workbench registration requires the managed wallet gateway");
   const server = createApi(
     manager,
     controller,
@@ -165,19 +219,10 @@ try {
     applications,
     llm,
     tracing,
+    applicationsUnavailable,
   );
   server.listen(numberFromEnvironment("AH_SERVICE_PORT", 4318, 0), "127.0.0.1");
   await once(server, "listening");
-  let inferenceServer: Awaited<ReturnType<typeof startInferenceListener>> | undefined;
-  if (process.env.AH_INFERENCE_BIND_HOST) {
-    try {
-      if (!llm?.settings.walletProxyUrl) throw new Error("Bridge inference requires the wallet proxy");
-      inferenceServer = await startInferenceListener(process.env.AH_INFERENCE_BIND_HOST,
-        numberFromEnvironment("AH_INFERENCE_PORT", 4317), llm, wallet, tracing);
-    } catch (error) {
-      server.closeAllConnections(); server.close(); throw error;
-    }
-  }
   console.log(
     `Agent Harbor: http://127.0.0.1:${(server.address() as { port: number }).port} (${manager.ready ? "ready" : "recovery required"})`,
   );

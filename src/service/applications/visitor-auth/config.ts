@@ -42,14 +42,36 @@ export function visitorOrigin(
 
 export const visitorPath = "/__harbor/visitor";
 
-/** 安装者显式启用后核对域名、网关和签名配置，发现缺项时阻止启动。 */
-export function visitorAuthOptions(): VisitorAuthOptions | undefined {
-  if (process.env.AH_APP_AUTH_ENABLED !== "1") return;
-  const required = (name: string) => {
-    const value = process.env[name]?.trim();
-    if (!value) throw new Error(`Missing ${name}`);
-    return value;
-  };
+export type VisitorFeatureReporter = (feature: "applicationVisitorAuth" | "applicationVisitorGoogle" | "applicationVisitorEmbedded", reason: string) => void;
+const requiredFields = [
+  "AH_APP_AUTH_ORIGIN", "AH_APP_AUTH_DOMAIN", "AH_APP_AUTH_POCKETBASE",
+  "AH_APP_AUTH_POCKETBASE_TOKEN", "AH_APP_AUTH_EDGE_DIAL", "AH_APP_AUTH_EDGE_TOKEN",
+  "AH_APP_AUTH_SIGNING_KEY", "AH_APP_PUBLIC_ORIGIN",
+] as const;
+
+/** 仅在域名、网关和签名配置齐备时启用，避免访客认证配置影响公共应用。 */
+export function visitorAuthOptions(
+  report: VisitorFeatureReporter = (feature, reason) => console.error(`${feature}: ${reason}`),
+): VisitorAuthOptions | undefined {
+  if (["0", "false"].includes(process.env.AH_APP_AUTH_ENABLED ?? "")) {
+    report("applicationVisitorAuth", "Disabled by AH_APP_AUTH_ENABLED");
+    return;
+  }
+  const missing = requiredFields.filter(name => !process.env[name]?.trim());
+  if (missing.length) {
+    report("applicationVisitorAuth", `Missing ${missing.join(", ")}`);
+    return;
+  }
+  try {
+    return configuredVisitorAuth(report);
+  } catch {
+    report("applicationVisitorAuth", "Invalid visitor domain, edge, signing key or backend configuration");
+    return;
+  }
+}
+
+function configuredVisitorAuth(report: VisitorFeatureReporter): VisitorAuthOptions {
+  const required = (name: typeof requiredFields[number]) => process.env[name]!.trim();
   const auth = new URL(required("AH_APP_AUTH_ORIGIN"));
   const appDomain = required("AH_APP_AUTH_DOMAIN");
   const pocketbase = new URL(required("AH_APP_AUTH_POCKETBASE"));
@@ -61,19 +83,21 @@ export function visitorAuthOptions(): VisitorAuthOptions | undefined {
     type: "pkcs8",
   });
   const management = new URL(required("AH_APP_PUBLIC_ORIGIN"));
-  const workbenchOrigin = process.env.AH_APP_AUTH_WORKBENCH_ORIGIN?.trim() || undefined;
+  let workbenchOrigin = process.env.AH_APP_AUTH_WORKBENCH_ORIGIN?.trim() || undefined;
   if (workbenchOrigin) {
-    const studio = new URL(workbenchOrigin);
+    const studio = URL.parse(workbenchOrigin);
     const site = appDomain.split(".").slice(1).join(".");
-    const appLabel = studio.hostname.endsWith("." + appDomain)
+    const appLabel = studio?.hostname.endsWith("." + appDomain)
       ? studio.hostname.slice(0, -(appDomain.length + 1)) : "";
     // 保留由平台分配的应用域名；工作台只允许同站、独立的 HTTPS origin。
-    if (studio.protocol !== "https:" || studio.origin !== workbenchOrigin ||
+    if (studio?.protocol !== "https:" || studio.origin !== workbenchOrigin ||
         !site.includes(".") || !studio.hostname.endsWith("." + site) ||
         studio.hostname === auth.hostname || studio.hostname === appDomain ||
-        /^[a-f0-9-]+-(preview|prod)$/.test(appLabel))
-      throw new Error("Invalid AH_APP_AUTH_WORKBENCH_ORIGIN");
-  }
+        /^[a-f0-9-]+-(preview|prod)$/.test(appLabel)) {
+      report("applicationVisitorEmbedded", "Invalid AH_APP_AUTH_WORKBENCH_ORIGIN");
+      workbenchOrigin = undefined;
+    }
+  } else report("applicationVisitorEmbedded", "Missing AH_APP_AUTH_WORKBENCH_ORIGIN");
   const defaultBackend = process.env.AH_APP_AUTH_BACKEND?.trim() || "pocketbase";
   const betterSecret = process.env.AH_APP_AUTH_BETTER_SECRET?.trim();
   if (!["pocketbase", "better_auth"].includes(defaultBackend) ||
@@ -84,16 +108,24 @@ export function visitorAuthOptions(): VisitorAuthOptions | undefined {
     const prefix = "AH_APP_AUTH_BETTER_GOOGLE_" + environment.toUpperCase();
     const clientId = process.env[prefix + "_ID"]?.trim();
     const clientSecret = process.env[prefix + "_SECRET"]?.trim();
-    if (!!clientId !== !!clientSecret || (clientId && !betterSecret)) throw new Error("Invalid Better Auth Google configuration");
-    if (clientId && clientSecret) google[environment] = { clientId, clientSecret };
+    if (!!clientId !== !!clientSecret || (clientId && !betterSecret))
+      report("applicationVisitorGoogle", `Incomplete Better Auth Google configuration for ${environment}`);
+    else if (clientId && clientSecret) google[environment] = { clientId, clientSecret };
   }
-  if (google.preview && google.preview.clientId === google.production?.clientId)
-    throw new Error("Preview and production require distinct Google clients");
-  const googleId = process.env.AH_APP_AUTH_GOOGLE_ID?.trim() || undefined;
-  const googleSecret =
-    process.env.AH_APP_AUTH_GOOGLE_SECRET?.trim() || undefined;
+  if (google.preview && google.preview.clientId === google.production?.clientId) {
+    report("applicationVisitorGoogle", "Preview and production require distinct Google clients");
+    delete google.preview;
+    delete google.production;
+  }
+  let googleId = process.env.AH_APP_AUTH_GOOGLE_ID?.trim() || undefined;
+  let googleSecret = process.env.AH_APP_AUTH_GOOGLE_SECRET?.trim() || undefined;
+  if (!!googleId !== !!googleSecret) {
+    report("applicationVisitorGoogle", "Incomplete PocketBase Google configuration");
+    googleId = googleSecret = undefined;
+  } else if (!googleId && !Object.keys(google).length) {
+    report("applicationVisitorGoogle", "Google OAuth credentials are missing");
+  }
   if (
-    !!googleId !== !!googleSecret ||
     auth.protocol !== "https:" ||
     auth.href !== auth.origin + "/" ||
     !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/.test(appDomain) ||

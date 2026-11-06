@@ -397,6 +397,10 @@ export class ApplicationData {
     if (hostOverride) url.hostname = hostOverride;
     return url.href;
   }
+  /** 启动时只验证应用管理库连通，不创建业务库或角色。 */
+  async checkReady() {
+    await this.pool.query("SELECT 1");
+  }
   /** 关闭管理员连接池；只释放控制面连接，不删除应用数据库。 */
   async close() {
     await this.pool.end();

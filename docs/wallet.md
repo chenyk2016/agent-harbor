@@ -30,7 +30,7 @@
 
 1. 备份控制面数据库、AH_DATA_DIR和私有环境文件，确认无活动任务后停服。
 2. 构建并受控执行0011_wallet.sql；迁移给已有用户建立0余额账户，不赠送、不扣历史费用。
-3. 配置AH_WALLET_ENABLED=true及AH_WALLET_INFERENCE_URL，指向Runner可达的Harbor节点入口，例如http://host.docker.internal:4319/inference。LiteLLM管理地址仍由AH_LITELLM_MANAGEMENT_URL配置。
+3. 配置AH_WALLET_INFERENCE_URL，钱包随托管网关自动开启；可设AH_WALLET_ENABLED=false关闭。该地址指向Runner可达的Harbor节点入口，例如http://host.docker.internal:4319/inference。LiteLLM管理地址仍由AH_LITELLM_MANAGEMENT_URL配置。
 4. 重启会回收旧环境/Key。新环境使用钱包Token；无需修改Agent工具循环或Runner镜像。
 5. 管理员为每个部署设置四项平台价格，并给已有用户赠送额度/开通Plus；新用户自动按注册规则入账。没有价格或余额时明确拒绝，不回退旧直连出口。
 

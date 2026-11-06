@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Pool } from "pg";
 import { openDatabase } from "./client.js";
+import { applicationConfiguration } from "../applications/config.js";
 import { setupObservations } from "../observability/migrate.js";
 
 export interface MigrationResult { executed: string[]; total: number }
@@ -50,5 +51,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   } finally {
     await database.close();
   }
-  if (process.env.AH_APPLICATIONS_ENABLED === "1") await setupObservations();
+  if (applicationConfiguration(() => {})) await setupObservations();
 }

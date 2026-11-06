@@ -44,6 +44,7 @@ export function createApi(
   applications?: ApplicationService,
   llm?: LlmService,
   tracing?: TracingService,
+  applicationsUnavailable?: string,
 ) {
   manager.tracing = tracing;
   const wallet = new WalletService(manager.store.db);
@@ -176,6 +177,10 @@ export function createApi(
   if (applications) {
     api.use(createApplicationRouter(applications));
     api.use(createVisitorManagementRouter(applications));
+  } else {
+    api.get("/applications/config", (_request, response) =>
+      response.json({ enabled: false, canCreate: false, reason: applicationsUnavailable }),
+    );
   }
   if (mcp) api.use(createMcpRouter(mcp));
   if (skillModule) api.use(createSkillRouter(skillModule));
@@ -199,15 +204,23 @@ export function createApi(
 
   // 保持原Server返回值，启动、SSE和关机代码不需要更换生命周期所有者。
   const server = createServer(app);
-  if (applications?.observation && walletEnabled && process.env.AH_APP_ANALYSIS_ENABLED === "1") {
-    applications.analysis = new ApplicationAnalysis(applications, (path, body, headers, token, signal) => {
-      const address = server.address();
-      if (!address || typeof address === "string") fail(503, "APPLICATION_ANALYSIS_UNAVAILABLE");
-      return fetch(`http://127.0.0.1:${address.port}/inference${path}`, {
-        method: "POST", body, headers: { ...headers, authorization: `Bearer ${token}`, "content-type": "application/json" },
-        signal, redirect: "error",
-      });
-    });
+  if (applications && !["0", "false"].includes(process.env.AH_APP_ANALYSIS_ENABLED ?? "")) {
+    if (!applications.observation || !walletEnabled) {
+      console.error("APPLICATION_ANALYSIS_UNAVAILABLE: requires application observations and the managed wallet gateway");
+    } else {
+      try {
+        applications.analysis = new ApplicationAnalysis(applications, (path, body, headers, token, signal) => {
+          const address = server.address();
+          if (!address || typeof address === "string") fail(503, "APPLICATION_ANALYSIS_UNAVAILABLE");
+          return fetch(`http://127.0.0.1:${address.port}/inference${path}`, {
+            method: "POST", body, headers: { ...headers, authorization: `Bearer ${token}`, "content-type": "application/json" },
+            signal, redirect: "error",
+          });
+        });
+      } catch {
+        console.error("APPLICATION_ANALYSIS_UNAVAILABLE: check AH_APP_ANALYSIS_TABLE_FIELDS");
+      }
+    }
   }
   server.once("listening", () => operations.start());
   server.once("close", () => {

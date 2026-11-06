@@ -1,4 +1,5 @@
 /** 仅服务进程读取凭证和规格；HTTP客户端不能覆盖这些受信配置。 */
+import type { OidcSettings } from "./identity/oidc.js";
 import type { WorkbenchSettings } from "./identity/workbench.js";
 import { defaultProfile } from "../shared/types.js";
 export function numberFromEnvironment(name: string, fallback: number, minimum = 1) {
@@ -19,29 +20,46 @@ export function profileFromEnvironment() {
 }
 
 /** 固定公开origin用于回调、CSRF和Secure Cookie；永不从X-Forwarded-*推断。 */
-export function identityFromEnvironment(env: NodeJS.ProcessEnv = process.env) {
+export function identityFromEnvironment(env: NodeJS.ProcessEnv = process.env, managedWallet = false) {
   const origin = env.AH_PUBLIC_ORIGIN;
   if (origin) {
-    const url = new URL(origin);
-    if (url.origin !== origin || url.username || url.password ||
+    const url = URL.parse(origin);
+    if (!url || url.origin !== origin || url.username || url.password ||
         (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))) throw new Error("Invalid AH_PUBLIC_ORIGIN");
   }
-  const issuer = env.AH_OIDC_ISSUER, clientId = env.AH_OIDC_CLIENT_ID, clientSecret = env.AH_OIDC_CLIENT_SECRET;
-  if ([issuer, clientId, clientSecret].some(Boolean) && !(issuer && clientId && clientSecret && origin)) throw new Error("OIDC requires issuer, client ID, secret and public origin");
-  if (issuer && (new URL(issuer).protocol !== "https:" || new URL(issuer).username || new URL(issuer).password)) throw new Error("OIDC issuer requires HTTPS");
   if (env.AH_KEY_LOGIN && !["true", "false"].includes(env.AH_KEY_LOGIN)) throw new Error("Invalid AH_KEY_LOGIN");
   const keyLogin = env.AH_KEY_LOGIN !== "false";
+  const issues: string[] = [];
+
+  let oidc: OidcSettings | undefined;
+  const issuer = env.AH_OIDC_ISSUER?.trim(), clientId = env.AH_OIDC_CLIENT_ID?.trim(), clientSecret = env.AH_OIDC_CLIENT_SECRET;
+  if (issuer || clientId || clientSecret) {
+    if (!issuer || !clientId || !clientSecret?.trim() || !origin) {
+      issues.push("OIDC requires AH_OIDC_ISSUER, AH_OIDC_CLIENT_ID, AH_OIDC_CLIENT_SECRET and AH_PUBLIC_ORIGIN");
+    } else {
+      const url = URL.parse(issuer);
+      if (!url || url.protocol !== "https:" || url.username || url.password)
+        issues.push("AH_OIDC_ISSUER must be an HTTPS URL without embedded credentials");
+      else oidc = { issuer, clientId, clientSecret, origin };
+    }
+  }
+
   const secret = env.AH_WORKBENCH_AUTH_SECRET?.trim();
-  if (secret && (!origin || secret.length < 32)) throw new Error("Workbench auth requires a public origin and a secret of at least 32 characters");
-  if (env.AH_WORKBENCH_REGISTRATION && !["true", "false"].includes(env.AH_WORKBENCH_REGISTRATION))
-    throw new Error("Invalid AH_WORKBENCH_REGISTRATION");
-  const registration = env.AH_WORKBENCH_REGISTRATION === "true";
-  if (registration && !secret) throw new Error("Workbench registration requires workbench auth");
-  if (registration && !origin?.startsWith("https:")) throw new Error("Workbench registration requires HTTPS");
-  const workbench: WorkbenchSettings | undefined = secret && origin ? { origin, secret, registration } : undefined;
-  if (!keyLogin && !issuer && !workbench) throw new Error("Disabling key login requires configured browser authentication");
+  const passwordLogin = origin && secret && secret.length >= 32 ? { origin, secret } : undefined;
+  if (secret && !passwordLogin)
+    issues.push("Workbench password login requires AH_PUBLIC_ORIGIN and an AH_WORKBENCH_AUTH_SECRET of at least 32 characters");
+  const registrationMode = env.AH_WORKBENCH_REGISTRATION;
+  const registrationReady = !!passwordLogin?.origin.startsWith("https:") && managedWallet;
+  if (registrationMode === "true" && !registrationReady)
+    issues.push("AH_WORKBENCH_REGISTRATION requires workbench password login, an HTTPS public origin and the managed wallet gateway");
+  if (registrationMode !== undefined && registrationMode !== "true" && registrationMode !== "false")
+    issues.push("AH_WORKBENCH_REGISTRATION must be true or false");
+  const registration = registrationReady && (registrationMode === undefined || registrationMode === "true");
+  const workbench: WorkbenchSettings | undefined = passwordLogin && { ...passwordLogin, registration };
+  if (!keyLogin && !oidc && !workbench)
+    issues.push("Browser login is unavailable because AH_KEY_LOGIN is false and no alternate login is configured");
   return { origin, keyLogin, workbench, adminUsers: (env.AH_ADMIN_USERS ?? "").split(",").map(s => s.trim()).filter(Boolean),
-    oidc: issuer ? { issuer, clientId: clientId!, clientSecret: clientSecret!, origin: origin! } : undefined };
+    oidc, issues };
 }
 
 /** SDK预算允许小数美元；0关闭估算限额，真实钱包仍独立结算。 */

@@ -26,12 +26,21 @@ export function ApplicationsPage() {
   const [apps, setApps] = useState<AppRecord[]>([]);
   const [enabled, setEnabled] = useState<boolean>();
   const [canCreate, setCanCreate] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState<string>();
 
   useEffect(() => {
     let alive = true;
     void api
-      .request<{ canCreate: boolean }>("/applications/config")
+      .request<{ enabled: boolean; canCreate: boolean; reason?: string }>("/applications/config")
       .then(async (config) => {
+        if (config.enabled === false) {
+          if (alive) {
+            setEnabled(false);
+            setCanCreate(false);
+            setUnavailableReason(config.reason);
+          }
+          return;
+        }
         const records = await api.request<AppRecord[]>("/applications");
         if (alive) {
           setEnabled(true);
@@ -76,7 +85,7 @@ export function ApplicationsPage() {
         ) : !enabled ? (
           <Alert status="info" fontSize="12px" borderRadius="9px">
             <AlertIcon boxSize="14px" />
-            应用创建尚未在此服务开启。
+            应用创建暂不可用。{unavailableReason && ` ${unavailableReason}`}
           </Alert>
         ) : (
           <>

@@ -20,11 +20,11 @@
 1. 为 LiteLLM 准备独立 PostgreSQL 数据库/账号；不要使用 Harbor 业务表或观测库。
 2. 在私有环境文件配置 `AH_LITELLM_DATABASE_URL`、`AH_LITELLM_MASTER_KEY`、`AH_LITELLM_SALT_KEY`。管理 Key 和 Salt 必须长期保管；Salt 变化会影响已保存上游凭据的解密。
 3. `docker compose --env-file <private-env-file> -f infra/litellm.compose.yml up -d`。模板固定 `ghcr.io/berriai/litellm:v1.106.1`，本机默认 127.0.0.1:4320，仅用于受管本地部署；公开服务应使用 TLS 和网络访问控制。
-4. Harbor 配置 `AH_LLM_ENABLED=true`、`AH_LITELLM_MANAGEMENT_URL=http://127.0.0.1:4320`、`AH_LITELLM_INFERENCE_URL=http://host.docker.internal:4320` 和同一管理 Key。宿主与 Runner 地址不同；全容器部署应改为内部服务名。
+4. Harbor 配置 `AH_LITELLM_MANAGEMENT_URL=http://127.0.0.1:4320`、`AH_LITELLM_INFERENCE_URL=http://host.docker.internal:4320` 和同一管理 Key。宿主与 Runner 地址不同；全容器部署应改为内部服务名。
 5. 可选配置 `AH_LLM_DEFAULT_DEPLOYMENT_ID`、`AH_LLM_POLICY_FILE`、`AH_LLM_SESSION_BUDGET_USD`。执行 `npm run build` 和 `npm run db:migrate` 后启动；启动不自动迁移数据库。
 6. 管理员先新增供应商，再新增命名部署；部署会自动创建 v1 并同步。需要更换上游、协议或能力声明时发布新版本，再显式设为当前。
 
-管理模式下不使用全局 `AH_GATEWAY_TOKEN`。关闭 `AH_LLM_ENABLED` 后仍可使用旧全局网关模式，但带受管快照的会话不会回退旧出口。
+托管网关配置齐全后自动启用。缺少必要配置时，管理台仍可启动。已指定托管网关的实例不会因配置不全而改用全局密钥。管理模式下不使用全局 `AH_GATEWAY_TOKEN`。关闭 `AH_LLM_ENABLED` 后仍可使用旧全局网关模式，但带受管快照的会话不会回退旧出口。
 
 ## 管理操作
 

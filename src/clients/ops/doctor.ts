@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { identityFromEnvironment } from "../../service/config.js";
 import { WorkbenchAuth } from "../../service/identity/workbench.js";
-import { llmSettings } from "../../service/llm/client.js";
+import { resolveLlmSettings } from "../../service/llm/client.js";
+import { applicationConfiguration } from "../../service/applications/config.js";
 import { langfuseConfig } from "../../service/tracing/config.js";
 import {
   run,
@@ -58,14 +59,15 @@ export async function doctor(
       throw new OpsError("NODE_24_19_REQUIRED");
     return process.versions.node;
   });
+  let llm: ReturnType<typeof resolveLlmSettings>["settings"];
   await check("configuration", async () => {
-    const identity = identityFromEnvironment(c.env);
-    const llm = llmSettings(c.env);
-    if (identity.workbench?.registration && !llm?.walletProxyUrl)
-      throw new OpsError("WORKBENCH_REGISTRATION_REQUIRES_WALLET");
-    if (c.env.AH_APPLICATIONS_ENABLED !== "0")
-      throw new OpsError("APPLICATIONS_OUTSIDE_BASELINE");
-    return "explicit instance; application module disabled";
+    const gateway = resolveLlmSettings(c.env);
+    llm = gateway.settings;
+    const identity = identityFromEnvironment(c.env, !!llm?.walletProxyUrl);
+    const issues = [...identity.issues];
+    if (gateway.missing.length) issues.push("Managed gateway requires " + gateway.missing.join(", "));
+    const app = applicationConfiguration((_feature, reason) => issues.push(reason), c.env);
+    return [app ? "application configuration present" : "application module unavailable", ...issues].join("; ");
   });
   await check("workspace", async () => {
     await access(c.env.AH_DATA_DIR!);
@@ -130,21 +132,23 @@ export async function doctor(
         )
           throw new OpsError("MIGRATION_MISSING_OR_CHANGED");
       }
-      const { workbench } = identityFromEnvironment(c.env);
+      const { workbench } = identityFromEnvironment(c.env, !!llm?.walletProxyUrl);
       if (workbench) await new WorkbenchAuth(pool, workbench).checkStorage();
       return "database reachable; migration checksums match";
     } finally {
       await pool.end();
     }
   });
-  await check("gateway", async () => {
+  const gateway = llm;
+  if (gateway) await check("gateway", async () => {
     const r = await request(
-      c.env.AH_LITELLM_MANAGEMENT_URL + "/health/liveness",
-      { headers: { Authorization: "Bearer " + c.env.AH_LITELLM_MASTER_KEY } },
+      gateway.managementUrl + "/health/liveness",
+      { headers: { Authorization: "Bearer " + gateway.masterKey } },
     );
     if (!r.ok) throw new OpsError("GATEWAY_UNAVAILABLE");
     return "free liveness only; model not called";
   });
+  else checks.push({ name: "gateway", status: "skipped", detail: "managed gateway unavailable or disabled" });
   if (options.service)
     await check("service", async () => {
       const base = c.env.AH_SERVICE_URL!;

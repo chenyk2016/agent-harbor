@@ -1,43 +1,71 @@
-import { applicationDataRoot, observationDatabaseUrl } from "../observability/database.js";
+import { applicationDataRoot, observationDatabaseUrl, observationEnabled } from "../observability/database.js";
 import { CaddyApplicationEdge } from "./edge.js";
-import { visitorAuthOptions } from "./visitor-auth/config.js";
+import { visitorAuthOptions, type VisitorFeatureReporter } from "./visitor-auth/config.js";
 import type { ApplicationOptions } from "./service.js";
 
-/** 默认关闭；开启时必须显式配置管理能力和受信创作者。 */
+type ApplicationFeature = "applications" | "applicationObservation" | Parameters<VisitorFeatureReporter>[0];
+export type ApplicationFeatureReporter = (feature: ApplicationFeature, reason: string) => void;
+const logUnavailable: ApplicationFeatureReporter = (feature, reason) => console.error(`${feature}: ${reason}`);
+
+/** 配置完整时自动启用。只报告配置名，避免泄漏地址里的私密内容。 */
+export function applicationConfiguration(report = logUnavailable, env: NodeJS.ProcessEnv = process.env) {
+  if (["0", "false"].includes(env.AH_APPLICATIONS_ENABLED ?? "")) {
+    report("applications", "Disabled by AH_APPLICATIONS_ENABLED");
+    return;
+  }
+  const required = ["AH_APP_PUBLIC_ORIGIN", "AH_APP_CREATOR_IDS", "AH_APP_DATABASE_ADMIN_URL", "AH_APP_CADDY_ADMIN"] as const;
+  const missing = required.filter(name => !env[name]?.trim());
+  if (missing.length) {
+    report("applications", `Missing ${missing.join(", ")}`);
+    return;
+  }
+  const [publicOrigin, creatorIds, dataAdminUrl, caddyAdmin] = required.map(name => env[name]!.trim());
+  const creators = new Set(creatorIds.split(",").map(value => value.trim()).filter(Boolean));
+  if (!creators.size) {
+    report("applications", "Invalid AH_APP_CREATOR_IDS");
+    return;
+  }
+  try {
+    const origin = new URL(publicOrigin);
+    if (origin.origin !== origin.href.replace(/\/$/, "") || !["http:", "https:"].includes(origin.protocol))
+      throw new Error();
+    return { publicOrigin: origin.origin, creators, dataAdminUrl, caddyAdmin };
+  } catch {
+    report("applications", "Invalid AH_APP_PUBLIC_ORIGIN");
+    return;
+  }
+}
+
 export async function applicationOptions(
   dataRoot: string,
+  report = logUnavailable,
 ): Promise<ApplicationOptions | undefined> {
-  if (process.env.AH_APPLICATIONS_ENABLED !== "1") return;
-  /** 读取启用应用功能时的必填环境变量；缺失时明确报配置错误，避免以空配置启动。 */
-  const required = (name: string) => {
-    const value = process.env[name];
-    if (!value) throw new Error(`Set ${name} before enabling applications`);
-    return value;
-  };
-  const origin = new URL(required("AH_APP_PUBLIC_ORIGIN"));
-  if (
-    origin.origin !== origin.href.replace(/\/$/, "") ||
-    !["http:", "https:"].includes(origin.protocol)
-  )
-    throw new Error("Invalid AH_APP_PUBLIC_ORIGIN");
-  const creators = new Set(
-    required("AH_APP_CREATOR_IDS")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-  if (!creators.size) throw new Error("Set AH_APP_CREATOR_IDS");
-  const visitorAuth = visitorAuthOptions();
+  const configuration = applicationConfiguration(report);
+  if (!configuration) return;
+  const { publicOrigin, creators, dataAdminUrl, caddyAdmin } = configuration;
+  const visitorAuth = visitorAuthOptions(report);
+  const upstream = process.env.AH_APP_EDGE_UPSTREAM_HOST ?? "127.0.0.1";
+  if (!["127.0.0.1", "host.docker.internal"].includes(upstream)) {
+    report("applications", "Invalid AH_APP_EDGE_UPSTREAM_HOST");
+    return;
+  }
+  let edge: CaddyApplicationEdge;
+  try {
+    edge = new CaddyApplicationEdge(caddyAdmin, publicOrigin, upstream, undefined, visitorAuth);
+  } catch {
+    report("applications", "Invalid AH_APP_CADDY_ADMIN");
+    return;
+  }
   const root = applicationDataRoot(dataRoot);
-  const dataAdminUrl = required("AH_APP_DATABASE_ADMIN_URL");
   let observation: ApplicationOptions["observation"];
   try {
     const databaseUrl = await observationDatabaseUrl(root);
     if (databaseUrl) observation = observationOptions(databaseUrl);
-    else if (process.env.AH_OBSERVATION_ENABLED !== "0")
-      console.error("OBSERVATION_SETUP_REQUIRED: run npm run observability:migrate");
+    else report("applicationObservation", !observationEnabled()
+      ? "Disabled by AH_OBSERVATION_ENABLED"
+      : "Observation database is not ready; run npm run observability:migrate");
   } catch {
-    console.error("OBSERVATION_CONFIGURATION_INVALID");
+    report("applicationObservation", "Invalid observation database or collector configuration");
   }
   return {
     visitorAuth,
@@ -47,13 +75,7 @@ export async function applicationOptions(
       "node:24.14.0-bookworm-slim@sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8",
     dataAdminUrl,
     databaseHost: process.env.AH_APP_DATABASE_HOST,
-    edge: new CaddyApplicationEdge(
-      required("AH_APP_CADDY_ADMIN"),
-      origin.origin,
-      process.env.AH_APP_EDGE_UPSTREAM_HOST ?? "127.0.0.1",
-      undefined,
-      visitorAuth,
-    ),
+    edge,
     creators,
     downloadProxy: process.env.AH_APP_BUILD_PROXY,
     observation,

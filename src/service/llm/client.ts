@@ -47,12 +47,45 @@ export interface LlmSettings {
   sessionBudgetUsd?: number;
   policy?: GatewayPolicy;
 }
-export function llmSettings(env = process.env): LlmSettings | undefined {
-  if (env.AH_LLM_ENABLED !== "true") return undefined;
-  const url = (name: string) => {
-    const raw = env[name];
-    if (!raw) throw new Error(`Set ${name}`);
-    const parsed = new URL(raw);
+export interface LlmConfiguration {
+  settings?: LlmSettings;
+  missing: string[];
+  allowLegacyGateway: boolean;
+}
+export function resolveLlmSettings(env = process.env): LlmConfiguration {
+  const mode = env.AH_LLM_ENABLED?.trim();
+  if (mode && mode !== "true" && mode !== "false")
+    throw new Error("Invalid AH_LLM_ENABLED");
+  if (mode === "false") return { missing: [], allowLegacyGateway: true };
+
+  const walletMode = env.AH_WALLET_ENABLED?.trim();
+  if (walletMode && walletMode !== "true" && walletMode !== "false")
+    throw new Error("Invalid AH_WALLET_ENABLED");
+  const managementUrl = env.AH_LITELLM_MANAGEMENT_URL?.trim();
+  const inferenceUrl = env.AH_LITELLM_INFERENCE_URL?.trim();
+  const masterKey = env.AH_LITELLM_MASTER_KEY?.trim();
+  const walletUrl = walletMode === "false" ? undefined : env.AH_WALLET_INFERENCE_URL?.trim();
+  const requested = mode === "true" || walletMode === "true" ||
+    Boolean(managementUrl || inferenceUrl || masterKey || walletUrl);
+  if (!requested) return { missing: [], allowLegacyGateway: true };
+
+  const missing = [
+    !managementUrl && "AH_LITELLM_MANAGEMENT_URL",
+    !inferenceUrl && "AH_LITELLM_INFERENCE_URL",
+    !masterKey && "AH_LITELLM_MASTER_KEY",
+    walletMode === "true" && !walletUrl && "AH_WALLET_INFERENCE_URL",
+  ].filter((field): field is string => Boolean(field));
+  // A partially configured managed gateway must not accidentally bypass the wallet.
+  if (!managementUrl || !inferenceUrl || !masterKey || missing.length)
+    return { missing, allowLegacyGateway: false };
+
+  const url = (name: string, raw: string) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new Error(`Invalid ${name}`);
+    }
     if (
       !["http:", "https:"].includes(parsed.protocol) ||
       parsed.username ||
@@ -63,20 +96,32 @@ export function llmSettings(env = process.env): LlmSettings | undefined {
       throw new Error(`Invalid ${name}`);
     return raw.replace(/\/$/, "");
   };
-  if (!env.AH_LITELLM_MASTER_KEY) throw new Error("Set AH_LITELLM_MASTER_KEY");
   const budget =
     env.AH_LLM_SESSION_BUDGET_USD === undefined
       ? undefined
       : Number(env.AH_LLM_SESSION_BUDGET_USD);
   if (budget !== undefined && (!Number.isFinite(budget) || budget <= 0))
     throw new Error("Invalid AH_LLM_SESSION_BUDGET_USD");
+  let policy: GatewayPolicy | undefined;
+  try {
+    policy = readGatewayPolicy(env.AH_LLM_POLICY_FILE);
+  } catch {
+    throw new Error("Invalid AH_LLM_POLICY_FILE");
+  }
   return {
-    managementUrl: url("AH_LITELLM_MANAGEMENT_URL"),
-    inferenceUrl: url("AH_LITELLM_INFERENCE_URL"),
-    masterKey: env.AH_LITELLM_MASTER_KEY,
-    walletProxyUrl: env.AH_WALLET_ENABLED === "true" ? url("AH_WALLET_INFERENCE_URL") : undefined,
-    defaultDeploymentId: env.AH_LLM_DEFAULT_DEPLOYMENT_ID,
-    sessionBudgetUsd: budget,
-    policy: readGatewayPolicy(env.AH_LLM_POLICY_FILE),
+    missing: [],
+    allowLegacyGateway: false,
+    settings: {
+      managementUrl: url("AH_LITELLM_MANAGEMENT_URL", managementUrl),
+      inferenceUrl: url("AH_LITELLM_INFERENCE_URL", inferenceUrl),
+      masterKey,
+      walletProxyUrl: walletUrl ? url("AH_WALLET_INFERENCE_URL", walletUrl) : undefined,
+      defaultDeploymentId: env.AH_LLM_DEFAULT_DEPLOYMENT_ID,
+      sessionBudgetUsd: budget,
+      policy,
+    },
   };
+}
+export function llmSettings(env = process.env): LlmSettings | undefined {
+  return resolveLlmSettings(env).settings;
 }
