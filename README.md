@@ -28,7 +28,7 @@ Agent Harbor 是一个自托管的 Agent 工作台。你可以在浏览器或 CL
 - **创建应用** · [应用创建与部署](docs/applications.md) · [访客登录](docs/application-login.md) · [运营观测](docs/application-observability.md)
 - **参与开发** · [系统架构](docs/architecture.md) · [HTTP 与 SSE](docs/service.md) · [贡献指南](CONTRIBUTING.md) · [测试与验收](docs/testing.md) · [发布文档站](docs/pages-publishing.md) · [源码发布](docs/releasing.md)
 
-[浏览完整文档目录](docs/index.md)
+[在线文档](https://chenyk2016.github.io/agent-harbor/) · [仓库内文档目录](docs/index.md)
 
 ## 安全与许可证
 
