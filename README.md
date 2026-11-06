@@ -1,93 +1,37 @@
 # Agent Harbor
 
-**为每个用户的 Agent 提供独立的会话与执行环境。**
+Agent Harbor 是一个自托管的 Agent 工作台。你可以在浏览器或 CLI 里上传文件、交给 Claude Code 分析数据或修改项目，再从工作区取回结果。任务由 Harbor 服务管理，关闭页面后可以重新连接查看进度和产物。
 
-通过网页或 CLI 提交任务，由长期运行的 Harbor 服务管理会话。Claude Code 在独立 Docker 容器中读写工作区，任务进度与结果可以重连补看。用户可为会话配置技能、专家及 MCP 工具。
+适合个人开发和受信小团队。每个会话在独立 Docker 环境中执行。管理员提供获准的模型凭据，并控制团队成员可用的模型和额度。
 
-当前适用于本地开发和受信小团队。工作台支持访问密钥及可选的 Better Auth 邮箱密码登录。管理员可以开通模型、分配额度和查看用量。
+## 快速开始
 
-应用创建首版已接入独立入口、持续对话与预览、Git版本、固定路径发布和独立运行容器，配置和依赖就绪后自动启用。启用条件和验证边界见[应用创建指南](docs/applications.md)。
+1. **安装并启动。** 准备 Node.js 24.19+、npm 11+、Python 3、Git、OpenSSL、Docker 和 Compose v2。构建服务与 Runner 镜像，执行 `harbor configure → install → init`，再启动宿主服务。首次初始化需要设置 `AH_BOOTSTRAP_ADMIN_KEY`。 [完整命令](docs/quickstart.md)
+2. **登录并接入模型。** 打开 `http://127.0.0.1:4318/`，用管理员密钥登录，点击「接入模型」。配置供应商和模型后运行测试，检查原生工具和流式响应。连接实际供应商测试会产生模型请求。 [首次模型与任务教程](docs/first-task.md)
+3. **完成第一个任务。** 上传教程里的 CSV，让 Agent 按类别汇总并生成文件，下载后核对结果。 [查看样例与预期输出](docs/first-task.md#提交并核对产物)
 
-对话与应用支持直接删除，不设回收站或恢复；会停止任务并清理专属文件、容器及应用业务数据，账务和必要审计记录保留。入口、范围与失败重试见[删除说明](docs/deletion.md)。
+## 主要能力
 
-启用应用创建后，受控迁移默认初始化应用运营观测，支持流量、业务转化、运行质量和版本分组，见[启用与边界](docs/application-observability.md)。
+| 使用场景 | Harbor 提供 |
+| --- | --- |
+| 处理文件或开发项目 | 持久工作区、连续对话、运行事件、任务中断与恢复、Skills、专家和 MCP 工具 |
+| 为团队管理模型和账号 | 访问密钥、Better Auth 邮箱密码、模型接入向导、使用范围、内部额度、价格和用量 |
+| 构建和发布 Web 应用 | 通过对话修改源码，独立预览与发布，版本回滚，可选访客登录和运营观测 |
+| 管理自托管实例 | 配置诊断、停机备份、空实例恢复与升级验收 |
 
-LiteLLM网关首版支持主流供应商预置与模型发现、管理员维护供应商成本、命名部署与不可变版本、用户选择与个人默认、输入框选择与同会话按轮切换模型、密钥轮换和独立受限凭据，网关配置齐全后自动启用。见[模型与网关指南](docs/llm-gateway.md)。
+托管安装会准备 PostgreSQL、LiteLLM 和钱包的基础配置。工作台自助注册需要 HTTPS、邮箱密码登录和可用的托管钱包网关。应用创作需要另外配置创建者、应用数据库和 Caddy。各项功能的触发条件和关闭方式见 [配置参考](docs/configuration.md#功能何时启用)。
 
-人民币额度支持注册赠送、管理员授予Plus及月度赠送、指定/全员赠送和逐请求余额扣费。启用后需配置模型平台单价，已有用户需赠送额度，见[钱包与扣费](docs/wallet.md)。
+## 文档入口
 
+- **使用工作台** · [第一个任务](docs/first-task.md) · [CLI](docs/cli.md) · [会话生命周期](docs/session-lifecycle.md) · [工作区](docs/workspace-files.md)
+- **部署和管理** · [部署、备份与恢复](docs/deployment.md) · [管理员与身份](docs/identity.md) · [模型与网关](docs/llm-gateway.md) · [排障](docs/troubleshooting.md)
+- **创建应用** · [应用创建与部署](docs/applications.md) · [访客登录](docs/application-login.md) · [运营观测](docs/application-observability.md)
+- **参与开发** · [系统架构](docs/architecture.md) · [HTTP 与 SSE](docs/service.md) · [贡献指南](CONTRIBUTING.md) · [测试与验收](docs/testing.md) · [发布文档站](docs/pages-publishing.md)
 
-模型与任务追踪可选接入Langfuse Cloud，完整配置自动启用、未配置关闭，见[配置与验证](docs/llm-observability.md)。
+[浏览完整文档目录](docs/index.md)
 
-## 安装与使用
+## 安全与许可证
 
-1. [本地安装与启动](docs/quickstart.md)涵盖环境准备、Docker 运行镜像、依赖迁移、首次管理员密钥及启动检查。
-2. [第一个 Agent 任务](docs/first-task.md)涵盖开通模型、上传 CSV、提交任务及下载校验。
-3. [托管部署与恢复](docs/deployment.md)涵盖专用服务器、HTTPS、团队账号、验收、停机备份、空库恢复和升级。
+服务默认监听回环地址。团队访问由运维配置 HTTPS 反向代理。陌生用户提交的任意代码需要更强的宿主和租户隔离。 [安全边界与漏洞报告](SECURITY.md)
 
-命令行用法见 [CLI 指南](docs/cli.md)。开发者从 [贡献指南](CONTRIBUTING.md) 开始。文档站的完整索引见 [文档首页](docs/index.md)，站点维护者见 [GitHub Pages 构建与发布](docs/pages-publishing.md)。
-
-## 架构与目录
-
-```text
-网页 / CLI → HTTP命令 + SSE事件 → 独立会话服务
-                                      ↓
-                             Controller / Conversation
-                                      ↓ Docker管道
-                           Runner → Claude SDK / Code
-```
-
-```text
-src/
-├── service/       长期服务、身份、PostgreSQL控制面、HTTP/SSE、会话管理与重启协调
-├── clients/
-│   ├── cli/       服务CLI及显式本地调试入口
-│   ├── web/       网页入口、状态、展示和安全Markdown；prototype保留设计稿
-│   └── service-client.ts  共用HTTP/SSE客户端
-├── runtime/       会话控制、文件状态、锁与Runner管道
-├── docker/        Docker CLI驱动及容器状态确认
-├── agent/         容器内Runner、Keeper、SDK权限配置与沙箱检查
-└── shared/        执行数据类型、协议与容器路径
-infra/             镜像、管理员策略与seccomp
-examples/          示例工作项目
-tests/            单元、HTTP、PostgreSQL迁移及实际Docker/SDK验证
-docs/             架构、配置、生命周期与开发文档
-var/               本地运行数据和证据，不进入Git
-```
-
-## 验证与安全边界
-
-`npm test`和`npm run check`不调用模型。Docker验证使用本地确定性模型夹具，证明实际SDK、工具和生命周期行为，不证明模型自主完成用户任务。见[测试指南](docs/testing.md)。
-
-Docker使用非root、只读根、cap-drop ALL、固定seccomp及原生管理员策略。当前为兼容原生沙箱使用`systempaths=unconfined`；路径保护取舍及未验安全范围见[安全说明](SECURITY.md)。本地服务默认仅监听127.0.0.1，不作为已完成生产隔离的公网服务。
-
-## 文档
-
-
-- [V7 React前端开发与设计](docs/react-web.md)
-- [V6用户登录、额度、用量与配置](docs/users-and-limits.md)
-- [V5文件工作区与代码阅读](docs/workspace-files.md)
-- [V4网页使用与代码阅读](docs/web-client.md)
-- [架构与代码入口](docs/architecture.md)
-- [从一条消息阅读代码](docs/code-reading.md)
-- [HTTP 路由与请求边界（Express 5）](docs/http-routing.md)
-- [V3运行与HTTP接口](docs/service.md)
-- [配置与数据目录](docs/configuration.md)
-- [持续对话、中断与回收](docs/session-lifecycle.md)
-- [独立服务设计及实现边界](docs/specs/service-managed-sessions.md)
-- [独立管理后台](docs/admin.md)
-- [测试指南](docs/testing.md)
-- [路线图](docs/roadmap.md)、[迁移说明](docs/migration.md)、[贡献指南](CONTRIBUTING.md)
-- [公开发布检查](docs/releasing.md)
-
-## 许可证与依赖
-
-自有源码采用[Apache-2.0](LICENSE)。Claude Agent SDK / Claude Code是外部依赖，受自身条款约束，不随本项目变为Apache开源软件；SDK、二进制、本地依赖和运行数据不纳入源码仓库。Moby seccomp配置的来源和许可见[NOTICE](NOTICE)。
-
-部署前请核对[上游使用条款](https://code.claude.com/docs/en/legal-and-compliance)，包括凭证、结算和分发要求。本项目不代表Anthropic官方产品，不提供模型账号、共享账号或代付服务。
-
-WorkBuddy专家包导入、完整Markdown、包内技能、MCP与OAuth使用见[专家模式](docs/workbuddy-experts.md)。专家定义不会改变原有工具权限或个人 Skill 默认开关。
-
-## 会话依赖环境
-
-统一运行镜像提供 Python、Node、uv/npm；专家与独立Skill共用用户级下载缓存和会话独立环境，重建容器后保留。原包格式不变，不要求新增依赖声明。详见[运行说明](docs/dependency-runtime.md)，执行`npm run verify:dependencies`验证真实包安装与离线复用（模型使用本地夹具）。
+Agent Harbor 自有源码采用 [Apache-2.0](LICENSE)。Claude Agent SDK、Claude Code 和模型服务适用各自的条款。部署者提供有权使用的模型凭据。 [第三方声明](NOTICE)

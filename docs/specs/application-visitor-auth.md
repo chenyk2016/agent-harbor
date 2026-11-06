@@ -1,6 +1,6 @@
 # 应用访客登录技术方案
 
-本文记录现有 PocketBase 实现。新应用的目标方案见 [Better Auth 改造规格](application-visitor-better-auth.md)。
+本文记录首版 PocketBase 方案。当前启用条件和两种后端的部署配置见[应用访客登录](../application-login.md)。新应用的目标方案见 [Better Auth 改造规格](application-visitor-better-auth.md)。
 
 2026-11-05，实现默认关闭。Harbor 使用一个私有 PocketBase 实例管理访客账号，在现有 Node 服务内增加应用认证模块。邮箱作为密码账号的登录标识。每个应用的预览和正式环境拥有各自的会话、用户管理入口，以及按登录方式隔离的账号集合。每个测试或正式安装环境使用一套 Google Web OAuth 客户端和一个固定回调。
 

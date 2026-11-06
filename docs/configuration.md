@@ -1,19 +1,20 @@
 # 配置与数据目录
 
-复制.env.example为.env，npm命令通过Node的env-file选项加载。已导出的环境变量优先；直接node启动时自行加载.env。服务使用PostgreSQL保存控制面，要求Node24.19+与PostgreSQL 18（17可用）。
+推荐从 [托管安装](quickstart.md) 开始。该方式生成实例私有 `harbor.env`，服务通过 `node --env-file=...` 加载。手工部署源码时可复制 `.env.example` 为 `.env`，由 `npm run server` 加载。Node 启动时，已导出的同名环境变量优先于文件值。控制面使用 PostgreSQL 18，最低为 17。
 
 | 配置 | 默认值/用途 |
 | --- | --- |
 | AH_GATEWAY_URL | http://host.docker.internal:8080，容器可访问的获准网关 |
-| AH_GATEWAY_TOKEN | 无有效默认值，仅服务或cli:local执行器需要 |
+| AH_GATEWAY_TOKEN | 旧全局网关的凭据。托管 LiteLLM 模式使用独立配置 |
 | AH_MODEL | claude-sonnet-4-6，以网关支持范围为准 |
-| AH_IMAGE | agent-harbor:0.4.0 |
+| AH_IMAGE | Runner 镜像。托管安装写入 `configure --image` 指定的版本 |
 | AH_DATA_DIR | 服务默认var/service-sessions；cli:local默认var/sessions |
 | AH_SERVICE_URL | CLI连接地址，默认http://127.0.0.1:4318 |
 | AH_SERVICE_TOKEN | CLI开发访问密钥，与网关凭证独立 |
 | AH_SERVICE_PORT | 服务本地监听端口，默认4318；始终绑定127.0.0.1 |
 | AH_IDLE_TIMEOUT_MS | 服务任务结束后的空闲回收，默认900000 |
 | AH_TASK_TIMEOUT_MS | 单轮总超时，默认0（无平台总时限）；设为正数后超时会强制关闭环境 |
+| AH_MAX_TURNS / AH_MAX_BUDGET_USD | 默认均为 0，即不设平台轮数和 SDK 估算费用上限 |
 | AH_INTERRUPT_TIMEOUT_MS | 原生中断等待时限，默认5000；超时强制关闭 |
 | AH_CAPACITY | 最多打开中的环境数，默认4，包含启动和空闲 |
 | AH_EVIDENCE_DIR | 部分验证脚本的输出位置，默认var/evidence |
@@ -23,6 +24,23 @@
 | AH_TEST_DATABASE_URL | 仅测试使用，指向可丢弃的数据库；测试会创建并删除独立schema |
 
 执行配置只由受信服务部署者提供，不透传浏览器输入。SDK预算在同一次query跨消息累计，不是租户硬配额；模型网关密钥和计费配置见[模型与网关](llm-gateway.md)与[额度与计费](wallet.md)。旧开发密钥文件在启动时导入PostgreSQL；V6本人密钥接口创建/撤销即时生效。
+
+## 功能何时启用
+
+托管安装已准备数据库、LiteLLM、钱包地址和工作台认证密钥。已有安装中显式关闭的配置继续生效。配置变更后重启服务。
+
+| 功能 | 自动启用条件 | 显式关闭 |
+| --- | --- | --- |
+| 托管 LiteLLM | 管理 URL、推理 URL、管理密钥齐全，且服务成功初始化网关 | `AH_LLM_ENABLED=false` |
+| 人民币钱包 | 托管 LiteLLM 可用，且已配置 Runner 可达的 `AH_WALLET_INFERENCE_URL` | `AH_WALLET_ENABLED=false` |
+| 工作台邮箱密码登录 | 固定 `AH_PUBLIC_ORIGIN`、至少 32 字符的 `AH_WORKBENCH_AUTH_SECRET`、认证表可用 | 通过移除认证密钥关闭邮箱密码入口，先验证其他登录方式 |
+| 工作台自助注册 | 工作台邮箱密码登录可用、公开来源是 HTTPS、托管钱包网关可用 | `AH_WORKBENCH_REGISTRATION=false` |
+| 应用创建 | 应用访问来源、创建者名单、应用数据库与 Caddy 管理地址已配置，服务检查数据库与 Caddy 就绪 | `AH_APPLICATIONS_ENABLED=0` |
+| 应用访客登录 | 应用创建可用，认证域、应用域、网关认证和凭据配置通过校验。每个应用另行声明登录策略 | `AH_APP_AUTH_ENABLED=0` |
+| 应用观测与只读问数 | 应用可用且观测库已迁移。问数还需要托管钱包网关 | `AH_OBSERVATION_ENABLED=0` 或仅关闭问数的 `AH_APP_ANALYSIS_ENABLED=0` |
+| Langfuse | 配置地址、公钥和密钥三项 | 留空三项 |
+
+部分启用条件缺失时，工作台可以继续启动，查看启动日志、应用入口或 `harbor doctor` 的配置说明。已选择托管网关时，配置不完整或不可用会阻止模型任务，不会回退到旧全局凭据。 [模型网关](llm-gateway.md) · [应用创建](applications.md) · [访客认证](application-login.md)
 
 ## 宿主持久目录
 

@@ -1,5 +1,7 @@
 # 可靠安装与完整验收
 
+> 本文保留首版设计。当前安装、管理员密钥和启用规则以[部署手册](../deployment.md)为准。
+
 范围：受信小团队、单机Linux宿主服务、Compose PostgreSQL/LiteLLM，保留原生SDK/锁/取消，应用默认关闭。Mac为开发验证；不声称未测试Linux目标已经准入。统一入口`node dist/src/clients/ops/main.js`，仓库用`npm run harbor --`。
 
 命令：configure首次生成私有环境；doctor分层检查宿主/数据库/镜像/沙箱；install启动受控依赖、迁移、检查；init在停服锁下初始化管理员和模型；status/verify免费；acceptance启动独立实例执行确定性或显式live任务；backup/restore仅停服、有归属、空目标恢复；service生成systemd文件；monitor轮询、状态变化通知；package生成固定版本发布包。

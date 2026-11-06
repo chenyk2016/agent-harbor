@@ -43,7 +43,7 @@ AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" \
   npm run harbor -- init --dir "$HARBOR_DIR" --admin operator
 ```
 
-首次 `init` 必须收到这个变量，接受 32 至 128 位字母、数字、下划线或短横线。这里由 OpenSSL 生成密钥，初始化后保存在实例目录的 `first-admin.key`，文件权限为 0600。请通过受控方式读取并放进密码管理器。如需通过环境文件管理密钥，可将该变量放入服务读取的环境文件，修改后重启生效。
+以上命令仅为本次初始化传入密钥。初始化后，通过受控方式读取实例目录中权限为 0600 的 `first-admin.key` 并保存到密码管理器。也可以在首次运行 `init` 前把密钥写进实例的私有 `harbor.env`。如果服务启动时加载了该变量，登录以服务配置的值为准。 [配置与轮换](identity.md#管理员访问密钥)
 
 ## 启动并登录
 
@@ -59,7 +59,7 @@ curl --fail --silent --show-error http://127.0.0.1:4318/api/health
 npm run harbor -- verify --dir "$HOME/agent-harbor-local"
 ```
 
-预期网页可打开、`/api/health` 返回 `ready: true`、免费检查通过。登录后还需要设置模型和额度才能发送模型任务。
+预期网页可打开、`/api/health` 返回 `ready: true`、免费检查通过。登录后，点首页的「接入模型」完成供应商、价格、额度及工具测试，再发送模型任务。
 
 ## 停止与再次启动
 

@@ -30,7 +30,6 @@
 4. 配置以下变量后执行 `npm run db:migrate`，再重启Harbor。启用应用功能时，迁移命令会在应用 PostgreSQL 上默认初始化独立观测库；现有安装也可单独执行 `npm run observability:migrate`。网页和公开应用应经过同一公开来源，以便预览嵌入。正式域名在Caddy外层配置HTTPS，公网DNS/证书不由应用创建流程申请。
 
 ```dotenv
-AH_APPLICATIONS_ENABLED=1
 AH_APP_PUBLIC_ORIGIN=http://127.0.0.1:8080
 AH_APP_CADDY_ADMIN=http://127.0.0.1:2019
 AH_APP_CREATOR_IDS=developer
@@ -48,7 +47,7 @@ node:24.14.0-bookworm-slim@sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20e
 
 应用运行的数据库主机名可用`AH_APP_DATABASE_HOST`覆盖；端口沿用数据库连接串。依赖下载代理只给Builder，通过`AH_APP_BUILD_PROXY`显式配置。不要把模型网关token、控制面数据库URL或Docker socket放入应用环境。
 
-所需配置、应用数据库和 Caddy 就绪后自动开启。页面会显示当前不可用的原因。设置 `AH_APPLICATIONS_ENABLED=0` 可关闭。已关联应用的旧会话入口只能观看，新增生成请求需要从应用入口提交。
+所需配置、应用数据库和 Caddy 就绪后自动开启。已有部署若保留显式关闭值，需先调整该值。应用页显示当前不可用的原因。设置 `AH_APPLICATIONS_ENABLED=0` 可关闭。已关联应用的旧会话入口只能观看，新增生成请求需要从应用入口提交。
 
 ## 固定存储与持久化
 

@@ -18,7 +18,7 @@ docker build -f infra/Dockerfile.release -t agent-harbor:YOUR_RELEASE .
 ```sh
 node dist/src/clients/ops/main.js configure --dir /srv/harbor-instance --image agent-harbor:YOUR_RELEASE
 node dist/src/clients/ops/main.js install --dir /srv/harbor-instance
-AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" node dist/src/clients/ops/main.js init --dir /srv/harbor-instance --admin operator --model-config /secure/bootstrap-model.json
+AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" node dist/src/clients/ops/main.js init --dir /srv/harbor-instance --admin operator
 node dist/src/clients/ops/main.js doctor --dir /srv/harbor-instance --runtime
 node --env-file=/srv/harbor-instance/harbor.env dist/src/service/server.js
 ```
@@ -37,7 +37,7 @@ harbor.example.com {
 }
 ```
 
-在私有 `harbor.env` 中设置 `AH_PUBLIC_ORIGIN=https://harbor.example.com`，与浏览器地址完全一致，再重启 Harbor。开启认证选项前，先从团队网络登录、运行一个短任务并重连，验证 TLS、Cookie 和 SSE 事件。反代需允许长连接并及时转发事件。PostgreSQL、LiteLLM 管理面、Docker API 和内部推理入口仅对各自所需的内部来源开放。配置应用访客时再单独规划认证域与应用域。
+在私有 `harbor.env` 中设置 `AH_PUBLIC_ORIGIN=https://harbor.example.com`，与浏览器地址完全一致。托管安装已准备邮箱登录密钥和钱包配置，切到 HTTPS 后可能同时开启自助注册。如需先验证再开放注册，请在重启前显式设置 `AH_WORKBENCH_REGISTRATION=false`。重启后从团队网络登录、运行短任务并重连，验证 TLS、Cookie 和 SSE 事件。反代需允许长连接并及时转发事件。PostgreSQL、LiteLLM 管理面、Docker API 和内部推理入口仅对各自所需的内部来源开放。配置应用访客时再单独规划认证域与应用域。
 
 ## 管理员与模型初始化
 
@@ -45,7 +45,7 @@ harbor.example.com {
 
 `first-admin.key`仅在首次初始化写入0600文件，管理员通过受控方式交给本人，在登录页使用；不能贴到公共日志。服务停机时可为成员使用原有access-key工具显式创建密钥；OIDC配置继续复用既有身份入口。首个登录者不会自动成为管理员。重复 init 沿用已有初始化结果。启用环境密钥时，服务启动后以环境文件中的值登录，首次初始化旧密钥失效。如果模型同步阶段失败，使用同一配置重跑init会核对现有供应商、加密凭据与模型后继续，不重复建模或轮换密钥。配置发生变化或匹配不唯一则拒绝自动选择，后续调整使用后台。若停在credentials-pending，表示凭据文件写入不确定：保留现场，核对first-admin.key与access-keys.json哈希后再修复检查点，不能直接删除重建。
 
-bootstrap-model.json由部署者提供，0600保存，不进入版本库。例如下面费率仅说明字段结构，不可当供应商真实价格：
+互动部署可在首次启动后用管理员身份打开[模型接入向导](first-task.md#开通一个模型)。自动化部署可以在首次 `init` 附加 `--model-config /secure/bootstrap-model.json`。私有文件权限设为 0600。以下示例展示字段和计价单位，实际价格以你的供应商和平台定价为准。
 
 ```json
 {
@@ -96,7 +96,7 @@ node dist/src/clients/ops/main.js install --dir /srv/harbor-restored
 
 restore校验清单哈希、包版本、空数据根与空数据库，不提供覆盖参数；只保留原身份/加密/模型配置，不恢复旧机器地址。失败可能留下部分恢复，保留检查点，换新的空目标恢复，不自动删除失败现场。还需启动服务，用原身份核对历史、文件、余额/流水，再运行doctor；存在dump不代表恢复通过。AH_PUBLIC_ORIGIN与OIDC回调需按新部署地址核对。
 
-升级：停服→备份→安装新版本到独立程序目录→检查迁移/旧镜像兼容→受控迁移→启动→verify；不覆盖旧镜像或会话快照。回退仅在旧服务兼容已执行数据库变更时进行，不自动回退数据库。破坏性迁移必须另行设计，不能用本工具强行回退。
+升级：停服→备份→安装新版本到独立程序目录→检查迁移/旧镜像兼容→受控迁移→启动→verify；不覆盖旧镜像或会话快照。从模型接入向导之前的版本升级时，先应用控制库迁移 `0026_llm_first_model_setup.sql`，再启动新版。回退仅在旧服务兼容已执行数据库变更时进行，不自动回退数据库。破坏性迁移必须另行设计，不能用本工具强行回退。
 
 ## 状态变化通知
 
@@ -118,12 +118,12 @@ restore校验清单哈希、包版本、空数据根与空数据库，不提供�
 
 ## 工作台邮箱密码登录
 
-先执行控制库迁移，再在实例的私有 `harbor.env` 设置 `AH_PUBLIC_ORIGIN` 和随机生成的 `AH_WORKBENCH_AUTH_SECRET`（托管 `configure` 会生成密钥）。重启后可用邮箱密码登录。HTTPS、邮箱登录和托管钱包网关就绪时，公开注册自动开启，新用户获得一次 10 元模型额度。只希望管理员创建账号时，设置 `AH_WORKBENCH_REGISTRATION=false`。关闭注册后已开通账号仍能登录。注册限流使用 Harbor 看到的连接来源和邮箱，并有实例级限制。代理后的请求会共享该代理的来源限额。
+先执行控制库迁移，再在实例的私有 `harbor.env` 设置 `AH_PUBLIC_ORIGIN` 和随机生成的 `AH_WORKBENCH_AUTH_SECRET`（托管 `configure` 会生成密钥）。重启后可用邮箱密码登录。HTTPS、邮箱登录和托管钱包网关就绪时，公开注册自动开启，新用户获得一次 10 元模型额度。需要关闭自助开户时，设置 `AH_WORKBENCH_REGISTRATION=false`。关闭注册后已开通账号仍能登录。注册限流使用 Harbor 看到的连接来源和邮箱，并有实例级限制。代理后的请求会共享该代理的来源限额。
 
-在开启注册前，部署操作者可用以下命令为现有管理员建立专用邮箱密码身份。凭据文件内容为 JSON 对象 `{ "email": "...", "password": "..." }`，权限设为 0600。命令需要该实例的私有部署配置和数据库访问权限。成功后移除临时凭据文件并通过 HTTPS 验证原管理员及资产，最后再考虑关闭旧网页登录方式。
+在开启注册前，部署操作者可用以下命令为现有管理员建立专用邮箱密码身份。凭据文件内容为 JSON 对象 `{ "email": "...", "password": "..." }`，权限设为 0600。命令需要该实例的私有部署配置和数据库访问权限。示例使用前文初始化的 `operator`，按实际管理员内部 ID 替换。成功后移除临时凭据文件并通过 HTTPS 验证原管理员及资产，最后再考虑关闭旧网页登录方式。
 
 ```sh
-node --env-file=/srv/harbor-instance/harbor.env dist/src/service/identity/bind-workbench.js developer /path/to/private-credentials.json
+node --env-file=/srv/harbor-instance/harbor.env dist/src/service/identity/bind-workbench.js operator /path/to/private-credentials.json
 ```
 
 认证表随控制库备份。恢复时同时保留认证配置，使用既有账号核对权限、资产和余额。若要暂时阻止新开户，可关闭公开注册并重启。回退认证入口时保留认证表和身份映射，已有邮箱账号需等新入口恢复后再次登录。
