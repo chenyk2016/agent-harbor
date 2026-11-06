@@ -13,6 +13,7 @@ REPOSITORY_FILES = {
     "downloads/app-edge.example.json": "infra/app-edge.example.json",
     "downloads/app-observation.Caddyfile.txt": "infra/app-observation.Caddyfile",
     "seccomp.md": "infra/seccomp.md",
+    "opensandbox.md": "infra/opensandbox/README.md",
 }
 
 
@@ -51,7 +52,9 @@ def on_files(files, config):
 def on_page_markdown(markdown, page, config, files):
     # Root-level Markdown links remain valid when read directly on GitHub.
     if page.file.src_uri == "security.md":
-        return markdown.replace("(infra/seccomp.md)", "(seccomp.md)")
+        return markdown.replace("(infra/seccomp.md)", "(seccomp.md)").replace(
+            "(infra/opensandbox/README.md)", "(opensandbox.md)"
+        )
     if page.file.src_uri == "contributing.md":
         return markdown.replace("(docs/testing.md)", "(testing.md)")
     for destination, source in REPOSITORY_FILES.items():

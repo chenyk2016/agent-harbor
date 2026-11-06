@@ -48,6 +48,7 @@ nav:
       - 删除与数据保留: deletion.md
   - 管理和运维:
       - 托管部署与恢复: deployment.md
+      - OpenSandbox 部署与回切: opensandbox.md
       - 管理员与身份: identity.md
       - 管理后台: admin.md
       - 模型与网关: llm-gateway.md

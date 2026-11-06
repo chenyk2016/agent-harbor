@@ -2,7 +2,7 @@
 
 Agent Harbor 是一个自托管的 Agent 工作台。你可以在浏览器或 CLI 里上传文件、交给 Claude Code 分析数据或修改项目，再从工作区取回结果。任务由 Harbor 服务管理，关闭页面后可以重新连接查看进度和产物。
 
-适合个人开发和受信小团队。每个会话在独立 Docker 环境中执行。管理员提供获准的模型凭据，并控制团队成员可用的模型和额度。
+适合个人开发和受信小团队。每个会话在独立执行环境中运行。默认由 Docker 管理，也可在单机 Linux 上启用 OpenSandbox，由它调用同一台机器的 Docker 引擎。管理员提供获准的模型凭据，并控制团队成员可用的模型和额度。
 
 ## 快速开始
 
@@ -24,9 +24,9 @@ Agent Harbor 是一个自托管的 Agent 工作台。你可以在浏览器或 CL
 ## 文档入口
 
 - **使用工作台** · [第一个任务](docs/first-task.md) · [CLI](docs/cli.md) · [会话生命周期](docs/session-lifecycle.md) · [工作区](docs/workspace-files.md)
-- **部署和管理** · [部署、备份与恢复](docs/deployment.md) · [管理员与身份](docs/identity.md) · [模型与网关](docs/llm-gateway.md) · [排障](docs/troubleshooting.md)
+- **部署和管理** · [部署、备份与恢复](docs/deployment.md) · [管理员与身份](docs/identity.md) · [模型与网关](docs/llm-gateway.md) · [排障](docs/troubleshooting.md) · [OpenSandbox 配置与回切](infra/opensandbox/README.md)
 - **创建应用** · [应用创建与部署](docs/applications.md) · [访客登录](docs/application-login.md) · [运营观测](docs/application-observability.md)
-- **参与开发** · [系统架构](docs/architecture.md) · [HTTP 与 SSE](docs/service.md) · [贡献指南](CONTRIBUTING.md) · [测试与验收](docs/testing.md) · [发布文档站](docs/pages-publishing.md)
+- **参与开发** · [系统架构](docs/architecture.md) · [HTTP 与 SSE](docs/service.md) · [贡献指南](CONTRIBUTING.md) · [测试与验收](docs/testing.md) · [发布文档站](docs/pages-publishing.md) · [源码发布](docs/releasing.md)
 
 [浏览完整文档目录](docs/index.md)
 

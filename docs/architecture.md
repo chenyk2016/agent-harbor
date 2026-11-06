@@ -1,6 +1,6 @@
 # 架构与职责
 
-V3把客户端连接和执行生命周期分开：长期服务持有Conversation，网页和CLI只提交请求和查看事件。V4网页与HTTP接口同源部署；V5补文件，V6补身份、额度和用量，都复用V3执行链路。V7将正式网页迁移到apps/web（React/Chakra UI/Vite），复用原有状态逻辑与接口。控制面数据库已从SQLite迁移到PostgreSQL，表结构由受控迁移步骤建立，业务数据用单独导入脚本搬迁。
+Harbor 服务持有会话和执行状态，浏览器与 CLI 提交请求并通过 SSE 接收事件。工作台使用 React、Chakra UI 与 Vite，服务使用 PostgreSQL 存储身份、消息、事件和钱包账目。执行层通过统一接口选择 Docker 或 OpenSandbox。
 
 ```mermaid
 flowchart TD
@@ -15,9 +15,13 @@ flowchart TD
   SSE -->|SSE补看与持续事件| WEB
   M --> C[runtime/Controller与Conversation]
   C --> P[runtime/providers：环境与通信接口]
-  P --> D[docker/DockerResidentProvider]
-  D <-->|docker exec 输入输出管道| R[agent/常驻Runner]
-  D --> K[agent/Keeper]
+  P --> D[默认 Docker 适配器]
+  P --> O[可选 OpenSandbox 管理服务]
+  D --> E[本机 Docker 引擎]
+  O --> E
+  E --> R[隔离容器内的原生 Runner]
+  D <-->|Docker exec 管道| R
+  O <-->|私有 Unix socket| R
   R <--> SDK[Claude SDK / Code]
   SDK --> G[获准模型网关]
 ```
@@ -28,7 +32,7 @@ flowchart TD
 2. HTTP验证凭证及会话归属；SessionManager检查去重、忙状态和容量。
 3. PostgreSQL事务保存accepted消息和事件，成功才返回202；同一会话的接收由行锁串行化。执行由服务自己的AbortController管理。
 4. 服务打开或复用Conversation，将服务messageId作为执行attemptId。
-5. Conversation通过同一条Docker输入管道发送JSON行。Runner的异步生成器逐条交给同一次SDK query。
+5. Conversation 通过所选后端的连接发送 JSON 行。Docker 使用 exec 管道，OpenSandbox 使用宿主与容器间的私有 Unix socket。Runner 将输入交给持续运行的 Claude SDK。
 6. Runner转换原生输出；执行层先记录诊断，再通知服务保存公开事件。
 7. SSE读取已提交事件，客户端按eventId显示与重连。原生result之后还要等待执行层收尾，才保存message.finished。
 
@@ -50,8 +54,20 @@ flowchart TD
 | `runtime/` | 会话锁、状态文件、原生恢复与Runner连接 |
 | `runtime/providers/` | 环境生命周期和 Runner 通信接口。引擎状态无法确认时拒绝继续 |
 | `docker/` | Docker 适配器、固定 CLI 参数、归属检查和停止确认 |
+| `opensandbox/` | OpenSandbox 管理 API、只读运行配置、持久归属和 Runner 通信 |
+| `service/applications/` | 版本、构建、业务数据库、预览、正式运行与 Caddy 路由 |
 | `agent/` | 容器内输入队列、SDK调用、事件转换、Keeper和沙箱 |
 | `shared/` | 协议、执行类型及容器路径约定 |
+
+## 执行环境的选择
+
+| 场景 | OpenSandbox 开关 | 启用后的边界 |
+| --- | --- | --- |
+| 对话、专家、Skills、MCP、CLI | `AH_RESIDENT_BACKEND=opensandbox` | 保留会话镜像、工作区和可恢复状态，关闭前核对旧进程。 |
+| MCP 连通探测、问数、Skill 依赖安装和应用构建 | 同上 | 一次性任务，问数和 Skill 安装断网。构建确认停止后交接产物。 |
+| 应用预览和正式运行 | `AH_APP_RUNTIME_BACKEND=opensandbox` | Caddy 通过私有路由访问，每个部署拥有自己的代理凭据和应用配置。 |
+
+Harbor、PostgreSQL、Caddy 和镜像封装由部署者管理。OpenSandbox 使用本机 Docker 引擎。 [部署和回切](../infra/opensandbox/README.md)
 
 ## 状态的归属
 
@@ -63,7 +79,7 @@ clientMessageId解决重复提交；messageId同时是执行attemptId；generati
 
 用户停止只针对messageId。含本地MCP时强制清理整个会话环境，避免MCP继续在后台执行；其他任务原生中断后等待本轮result，检查环境仍可用，再接受下一条；中断超时、任务总超时、协议异常及明确关闭会确认整个容器停止。后台任务可能跨原生中断继续；关闭环境才停止容器内全部进程。
 
-服务退出或崩溃后，首次恢复取得所有会话锁再清理旧容器。恢复沿用旧版会话文件和 Docker 归属标签。已断开的 exec 管道无法接管，未完成消息标记为 interrupted，不自动再执行。引擎未知保持reconciling，不允许新写入者。
+服务退出或崩溃后，首次恢复取得所有会话锁再清理旧容器。恢复沿用旧版会话文件和 Docker 归属标签。已断开的执行连接无法接管，未完成消息标记为 interrupted，不自动再执行。引擎未知保持reconciling，不允许新写入者。
 
 ## 当前取舍
 
@@ -83,7 +99,7 @@ V6通过identity模块接OIDC，复用Cookie和会话ownerId；登录/密钥哈�
 
 ## V8：技能与会话如何连接
 
-SkillService管理完整源包和不可变版本；SkillBuildManager管理准备请求和个人默认版本；Docker的SkillBuilder只负责固定源下载、断网安装、产物校验和停止确认。网页不直接拼Docker或SDK参数。
+SkillService管理完整源包和不可变版本；SkillBuildManager管理准备请求和个人默认版本；SkillBuilder 负责固定源下载、断网安装、产物校验和停止确认。网页不直接拼Docker或SDK参数。
 
 创建会话时，服务固定所选版本和镜像，只复制对应技能到会话目录。Runner通过SDK plugins参数暴露目录，保留原生默认技能与Skill工具。平台不审核技能正文、不检查技能调用名字、不做额外初始化门槛，不记录专用装载确认事件。Claude负责发现和调度，恢复继续使用原文件快照。
 

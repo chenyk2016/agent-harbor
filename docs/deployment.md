@@ -27,6 +27,10 @@ node --env-file=/srv/harbor-instance/harbor.env dist/src/service/server.js
 
 Linux由Docker bridge实际网关地址提供仅/inference的钱包入口，并为Runner配置host.docker.internal:host-gateway；网页与管理API不暴露到这个入口。它沿用钱包凭据校验。macOS使用容器引擎提供的宿主别名。doctor --runtime实际创建命名空间探针，但不代表完整隔离审计；实际容器到模型入口由acceptance验证。禁止将Docker socket挂给用户任务，服务账号的Docker权限属于宿主高权限，应在专用机器运行。
 
+## 可选的 OpenSandbox 后端
+
+默认安装使用 Docker 执行。要使用 OpenSandbox，请先部署单机私有管理服务，再分别配置执行和应用运行开关。托管 `install` 安装 PostgreSQL 和网关，OpenSandbox 管理服务由部署者单独维护。已有应用须先暂停预览或下线正式实例，再按原版本重建并核对数据和地址。 [OpenSandbox 部署、验证与回切](../infra/opensandbox/README.md)
+
 ## 团队 HTTPS 入口
 
 先用回环地址完成 [本地启动与登录](quickstart.md)。在专用服务器上为团队配置一个 HTTPS 域名，将 DNS 指向反向代理。Caddy 与 Harbor 在同一宿主机时可使用以下配置，将示例域名替换为你的域名。
@@ -96,7 +100,7 @@ node dist/src/clients/ops/main.js install --dir /srv/harbor-restored
 
 restore校验清单哈希、包版本、空数据根与空数据库，不提供覆盖参数；只保留原身份/加密/模型配置，不恢复旧机器地址。失败可能留下部分恢复，保留检查点，换新的空目标恢复，不自动删除失败现场。还需启动服务，用原身份核对历史、文件、余额/流水，再运行doctor；存在dump不代表恢复通过。AH_PUBLIC_ORIGIN与OIDC回调需按新部署地址核对。
 
-升级：停服→备份→安装新版本到独立程序目录→检查迁移/旧镜像兼容→受控迁移→启动→verify；不覆盖旧镜像或会话快照。从模型接入向导之前的版本升级时，先应用控制库迁移 `0026_llm_first_model_setup.sql`，再启动新版。回退仅在旧服务兼容已执行数据库变更时进行，不自动回退数据库。破坏性迁移必须另行设计，不能用本工具强行回退。
+升级：停服→备份→安装新版本到独立程序目录→检查迁移/旧镜像兼容→受控迁移→启动→verify；不覆盖旧镜像或会话快照。从模型接入向导之前的版本升级时，运行 `harbor install` 应用尚未执行的控制库迁移，再启动新版。迁移包括 `0026_llm_first_model_setup.sql` 和 `0027_application_runtime_backend.sql`，后者给已有应用记录保留 Docker 后端标识。回退仅在旧服务兼容已执行数据库变更时进行，不自动回退数据库。破坏性迁移必须另行设计，不能用本工具强行回退。
 
 ## 状态变化通知
 

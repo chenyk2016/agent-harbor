@@ -10,6 +10,7 @@ on:
       - 'LICENSE'
       - 'NOTICE'
       - 'infra/seccomp.md'
+      - 'infra/opensandbox/README.md'
       - 'infra/app-edge.example.json'
       - 'infra/app-observation.Caddyfile'
       - 'mkdocs.yml'

@@ -44,7 +44,11 @@ npm run verify:service
 
 持久化测试的后台进程由受信`docker exec`夹具启动，不能据此宣称任意SDK Bash后台服务能跨轮存活。空闲测试使用缩短时限运行同一路径，不等待完整默认15分钟。
 
-已验证的开发环境是Linux arm64容器与本地OrbStack Docker Engine；其他内核、架构与远程Docker需自行复验。测试配置依赖固定原生SDK，升级必须重复隔离和恢复检查。CI只跑不需要Docker/真实模型的检查。
+已验证的开发环境是Linux arm64容器与本地OrbStack Docker Engine；其他内核、架构与远程Docker需自行复验。测试配置依赖固定原生SDK，升级必须重复隔离和恢复检查。常规 CI 运行 PostgreSQL 回归、类型检查和公开审计。独立的 Linux 交付工作流可手动运行 Docker 验收。
+
+## OpenSandbox 验证
+
+先在一次性 Linux 环境按 [OpenSandbox 部署手册](../infra/opensandbox/README.md) 启动固定版本的管理服务。分别验证常驻会话、设置页 MCP 探测、短任务构建和应用运行。保留取消后写入停止、管理服务重启后资源状态、应用跨环境访问和回切证据。默认 Docker 验收不能覆盖这些路径。测试夹具使用本地模型，不产生真实模型账单。
 
 ## 真实模型与用户验收
 
@@ -61,7 +65,7 @@ npm run preview:web
 # 确认Bash开始后可测试停止；同一会话可继续发送
 ```
 
-这是实际服务、SQLite、Docker和Claude SDK链路。模型为确定性fixture，不证明自主推理。默认测试Bash等待45秒，便于观察中断/断开；结束时Ctrl+C清理测试容器。不要对该端口提交真实工作或私密资料。
+这是实际服务、PostgreSQL、Docker 和 Claude SDK 链路。模型为确定性fixture，不证明自主推理。默认测试Bash等待45秒，便于观察中断/断开；结束时Ctrl+C清理测试容器。不要对该端口提交真实工作或私密资料。
 
 ```sh
 # 显式真实模型验收，会产生费用；从.env读取获准网关

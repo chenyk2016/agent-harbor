@@ -18,6 +18,11 @@ https://code.claude.com/docs/en/legal-and-compliance
 They are not relicensed by Agent Harbor. This source repository does not
 vendor the SDK, Claude Code binaries, installed packages or Docker images.
 
+The optional OpenSandbox SDK and management service are separate upstream
+dependencies under Apache-2.0. Agent Harbor provides its own adapter and
+deployment scripts. The upstream server and execd binaries are not bundled.
+https://github.com/opensandbox-group/OpenSandbox/blob/release-1.2.0/LICENSE
+
 Other dependencies and operating-system packages retain their own licenses.
 The dependency lockfile records package versions; it does not grant rights
 beyond the respective upstream licenses.

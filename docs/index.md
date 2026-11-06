@@ -1,6 +1,6 @@
 # Agent Harbor
 
-<div class="docs-intro">在自己的机器上运行一个多用户 Agent 工作台。用网页或 CLI 提交任务，在隔离的 Docker 会话中分析文件、修改代码，或把生成的 Web 应用发布到自己的服务。</div>
+<div class="docs-intro">在自己的机器上运行一个多用户 Agent 工作台。用网页或 CLI 提交任务，在隔离的会话环境中分析文件、修改代码，或把生成的 Web 应用发布到自己的服务。</div>
 
 ## 从哪里开始
 
