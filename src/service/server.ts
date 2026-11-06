@@ -1,6 +1,6 @@
 import { WorkbenchAuth } from "./identity/workbench.js";
 /** 长期服务入口。单独启动，生命周期不跟随某个CLI或浏览器连接。 */
-import { mkdir, chmod } from "node:fs/promises";
+import { mkdir, chmod, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { once } from "node:events";
 import { Controller } from "../runtime/controller.js";
@@ -12,7 +12,7 @@ import { ServiceStore } from "./service-store.js";
 import { SessionManager } from "./session-manager.js";
 import { fail } from "./types.js";
 import { WorkspaceFiles } from "./files/workspace-files.js";
-import { Auth } from "./auth.js";
+import { Auth, tokenHash, validBootstrapAdminKey } from "./auth.js";
 import { McpService } from "./mcp/service.js";
 import { McpNetwork } from "./mcp/network.js";
 import { loadLocalTemplates } from "./mcp/templates.js";
@@ -58,7 +58,14 @@ try {
     if (error.code === "ENOENT") return new Auth([]);
     throw error;
   });
-  if (!auth.keys.length && !identity.oidc && !identity.workbench)
+  const configuredKey = process.env.AH_BOOTSTRAP_ADMIN_KEY;
+  delete process.env.AH_BOOTSTRAP_ADMIN_KEY;
+  const [configuredAdmin] = identity.adminUsers;
+  if (configuredKey !== undefined && !validBootstrapAdminKey(configuredKey))
+    throw new Error("Invalid AH_BOOTSTRAP_ADMIN_KEY");
+  if (configuredKey && identity.adminUsers.length !== 1)
+    throw new Error("AH_BOOTSTRAP_ADMIN_KEY requires exactly one AH_ADMIN_USERS entry");
+  if (!configuredKey && !auth.keys.length && !identity.oidc && !identity.workbench)
     throw new Error("No login credentials. For a new managed instance, set AH_BOOTSTRAP_ADMIN_KEY and run harbor init before starting.");
   // 表结构由受控迁移步骤建立；服务启动只连接，不自动建表或争抢执行迁移。
   database = openDatabase();
@@ -86,6 +93,16 @@ try {
   await manager.identity.adoptSessionOwners();
   await manager.identity.pruneLogins();
   await manager.identity.importKeys(auth.keys);
+  if (configuredKey && configuredAdmin) {
+    // Retire only the key written by the old managed initializer, leaving other keys alone.
+    const firstKey = await readFile(join(root, "..", "first-admin.key"), "utf8").catch(error => {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    });
+    const legacyHash = tokenHash(firstKey.trim());
+    const legacy = auth.keys.find(key => key.userId === configuredAdmin && key.tokenHash === legacyHash);
+    await manager.identity.configureAdminKey(configuredAdmin, tokenHash(configuredKey), legacy?.tokenHash);
+  }
   manager.recoveryFailed = !(await recover(store, controller));
   const files = new WorkspaceFiles(root);
   if (!(await files.initialize()))

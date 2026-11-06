@@ -107,7 +107,7 @@ test("delivery: bootstrap requires an explicit key once and never rotates it on 
   }
 });
 
-test("delivery: an uninitialized service refuses to start even with a bootstrap key", async () => {
+test("delivery: service refuses missing or ambiguous administrator configuration", async () => {
   const root = await mkdtemp(join(tmpdir(), "harbor-delivery-"));
   try {
     await configure(root, "agent-harbor:fixture");
@@ -120,7 +120,9 @@ test("delivery: an uninitialized service refuses to start even with a bootstrap 
         timeout: 10_000,
       });
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /AH_BOOTSTRAP_ADMIN_KEY and run harbor init/);
+      assert.match(result.stderr, bootstrapKey
+        ? /AH_BOOTSTRAP_ADMIN_KEY requires exactly one AH_ADMIN_USERS entry/
+        : /AH_BOOTSTRAP_ADMIN_KEY and run harbor init/);
       assert.ok(!result.stderr.includes(key));
     }
     await assert.rejects(readFile(join(root, "first-admin.key")), /ENOENT/);

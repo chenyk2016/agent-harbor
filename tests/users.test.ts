@@ -105,6 +105,29 @@ test("keys expire/revoke persistently; import cannot resurrect; external subject
   }finally{await f.clean();}
 });
 
+test("the environment administrator key rotates without revoking personal keys", async () => {
+  const f = await fixture();
+  try {
+    const legacy = tokenHash("key-a");
+    const personal = await f.manager.identity.createKey("a", "laptop");
+    const first = new IdentityStore(f.database.db);
+    await first.configureAdminKey("a", tokenHash("first configured key"), legacy);
+    assert.equal((await first.key("first configured key")).userId, "a");
+    await assert.rejects(first.key("key-a"), code("UNAUTHORIZED"));
+
+    const restarted = new IdentityStore(f.database.db);
+    await restarted.importKeys(f.auth.keys);
+    await restarted.configureAdminKey("a", tokenHash("second configured key"), legacy);
+    assert.equal((await restarted.key("second configured key")).userId, "a");
+    assert.equal((await restarted.key(personal.token)).userId, "a");
+    await assert.rejects(restarted.key("first configured key"), code("UNAUTHORIZED"));
+    await assert.rejects(restarted.key("key-a"), code("UNAUTHORIZED"));
+    await assert.rejects(restarted.configureAdminKey("a", tokenHash("key-b"), legacy), /conflicts with an existing access key/);
+  } finally {
+    await f.clean();
+  }
+});
+
 test("persistent browser session survives new connection manager; Secure configured and logout/disable revoke",async()=>{
   const f=await fixture();let first:BrowserSessions|undefined,second:BrowserSessions|undefined;
   try{

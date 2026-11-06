@@ -43,7 +43,7 @@ AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" \
   npm run harbor -- init --dir "$HARBOR_DIR" --admin operator
 ```
 
-首次 `init` 必须收到这个变量，接受 32 至 128 位字母、数字、下划线或短横线。这里由 OpenSSL 生成密钥，初始化后保存在实例目录的 `first-admin.key`，文件权限为 0600。请通过受控方式读取并放进密码管理器。之后重启和重复初始化沿用已有凭据，变量无需写入环境配置文件。
+首次 `init` 必须收到这个变量，接受 32 至 128 位字母、数字、下划线或短横线。这里由 OpenSSL 生成密钥，初始化后保存在实例目录的 `first-admin.key`，文件权限为 0600。请通过受控方式读取并放进密码管理器。如需通过环境文件管理密钥，可将该变量放入服务读取的环境文件，修改后重启生效。
 
 ## 启动并登录
 
@@ -52,7 +52,7 @@ npm run harbor -- doctor --dir "$HARBOR_DIR" --runtime
 node --env-file="$HARBOR_DIR/harbor.env" dist/src/service/server.js
 ```
 
-打开 **http://127.0.0.1:4318/**，选择访问密钥登录，粘贴 `first-admin.key` 中的值。首次登录后查看管理员入口。另开终端验证依赖与服务，路径沿用上面的实例目录。
+打开 **http://127.0.0.1:4318/**，选择访问密钥登录，使用环境文件中配置的密钥，或初始化时写入 `first-admin.key` 的密钥。首次登录后查看管理员入口。另开终端验证依赖与服务，路径沿用上面的实例目录。
 
 ```sh
 curl --fail --silent --show-error http://127.0.0.1:4318/api/health

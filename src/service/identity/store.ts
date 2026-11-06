@@ -11,6 +11,7 @@ import { defaultLimits, type UserLimits } from "../limits/policy.js";
 import { MICRO, signupCredit } from "../wallet/service.js";
 export interface User { id: string; name: string; disabled: number; createdAt: number; limits: string | null }
 export class IdentityStore {
+  private configuredAdminKey?: { userId: string; hash: string };
   constructor(private db: Database) {}
   private async requireIn(tx: Tx, id: string) {
     const [user] = await tx.select().from(users).where(eq(users.id, id)).limit(1);
@@ -77,9 +78,28 @@ export class IdentityStore {
       return inserted;
     });
   }
+  async configureAdminKey(userId: string, hash: string, legacyHash?: string) {
+    await this.db.transaction(async tx => {
+      await this.ensureIn(tx, userId);
+      const [existing] = await tx.select({ hash: userKeys.hash, userId: userKeys.userId })
+        .from(userKeys).where(eq(userKeys.hash, hash)).limit(1);
+      if (existing && (existing.userId !== userId || hash !== legacyHash))
+        throw new Error("AH_BOOTSTRAP_ADMIN_KEY conflicts with an existing access key");
+      if (legacyHash)
+        await tx.update(userKeys).set({ revoked: 1 })
+          .where(and(eq(userKeys.userId, userId), eq(userKeys.hash, legacyHash)));
+    });
+    this.configuredAdminKey = { userId, hash };
+  }
   async key(token: string) {
+    const hash = tokenHash(token);
+    const configured = this.configuredAdminKey;
+    if (configured?.hash === hash) {
+      await this.require(configured.userId);
+      return { userId: configured.userId, keyId: "configured-admin-key" };
+    }
     const [row] = await this.db.select({ id: userKeys.id, userId: userKeys.userId }).from(userKeys)
-      .where(and(eq(userKeys.hash, tokenHash(token)), eq(userKeys.revoked, 0),
+      .where(and(eq(userKeys.hash, hash), eq(userKeys.revoked, 0),
         sql`(${userKeys.expiresAt} is null or ${userKeys.expiresAt} > ${Date.now()})`)).limit(1);
     if (!row) fail(401, "UNAUTHORIZED");
     await this.require(row.userId); return { userId: row.userId, keyId: row.id };

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fail } from "./types.js";
 export const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
+export const validBootstrapAdminKey = (key: string) => /^[A-Za-z0-9_-]{32,128}$/.test(key);
 export class Auth {
   constructor(readonly keys: { userId: string; tokenHash: string }[]) {
     if (keys.some(key => !key.userId || !/^[a-f0-9]{64}$/.test(key.tokenHash))) throw new Error("Invalid access keys configuration");

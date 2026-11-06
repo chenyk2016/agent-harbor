@@ -18,7 +18,7 @@ import {
 } from "./common.js";
 import { lockSession } from "../../runtime/storage.js";
 import { parsePrice } from "../../service/wallet/service.js";
-import { tokenHash } from "../../service/auth.js";
+import { tokenHash, validBootstrapAdminKey } from "../../service/auth.js";
 import { openDatabase } from "../../service/db/client.js";
 import { applyMigrations } from "../../service/db/migrate.js";
 import { LlmService } from "../../service/llm/service.js";
@@ -324,10 +324,9 @@ export async function initialize(
           !(await exists(join(c.dir, "first-admin.key"))),
         "EXISTING_KEYS_REQUIRE_MANUAL_ADOPTION",
       );
-      // This secret belongs only to the initial operator command, not the service environment.
-      const token = process.env.AH_BOOTSTRAP_ADMIN_KEY;
+      const token = c.env.AH_BOOTSTRAP_ADMIN_KEY ?? process.env.AH_BOOTSTRAP_ADMIN_KEY;
       requireThat(token, "AH_BOOTSTRAP_ADMIN_KEY_REQUIRED");
-      requireThat(/^[A-Za-z0-9_-]{32,128}$/.test(token), "INVALID_AH_BOOTSTRAP_ADMIN_KEY");
+      requireThat(validBootstrapAdminKey(token), "INVALID_AH_BOOTSTRAP_ADMIN_KEY");
       state = {
         userId,
         modelDigest: digest,

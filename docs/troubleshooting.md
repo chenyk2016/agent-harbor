@@ -17,7 +17,7 @@ npm run harbor -- verify --dir "$HARBOR_DIR"
 | Docker 连不上 | 检查 Docker Engine 是否运行、当前账号是否有权限、Compose v2 是否可用 |
 | 端口被占用 | 核对 4318、55432、4320、55433。Linux 还用 4317 作 Runner 推理入口。新实例用 `configure` 的参数指定新端口 |
 | 找不到表或迁移缺失 | 先停止 Harbor。托管部署运行该实例的 `harbor install`；源码手工部署用正确数据库连接运行 `npm run db:migrate` |
-| `AH_BOOTSTRAP_ADMIN_KEY_REQUIRED` | 第一次 `harbor init` 提供密钥。服务运行时沿用初始化产生的凭据 |
+| `AH_BOOTSTRAP_ADMIN_KEY_REQUIRED` | 在私有环境文件中配置密钥，或在首次 `harbor init` 时传入 |
 | `BOOTSTRAP_CREDENTIAL_WRITE_UNCONFIRMED` | 保留现场和初始化检查点，按[初始化说明](deployment.md#管理员与模型初始化)核对文件与哈希 |
 | 网页可开但 `ready: false` | 查看宿主服务日志和 Docker 状态。先核对旧 Runner 或未完成的恢复操作，避免在状态不明时再次提交 |
 

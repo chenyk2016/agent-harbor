@@ -17,7 +17,7 @@
 | AH_INTERRUPT_TIMEOUT_MS | 原生中断等待时限，默认5000；超时强制关闭 |
 | AH_CAPACITY | 最多打开中的环境数，默认4，包含启动和空闲 |
 | AH_EVIDENCE_DIR | 部分验证脚本的输出位置，默认var/evidence |
-| AH_BOOTSTRAP_ADMIN_KEY | 仅首次托管初始化读取。缺少或格式无效时失败，重启不读取 |
+| AH_BOOTSTRAP_ADMIN_KEY | 管理员访问密钥。可放入服务读取的 .env 或 harbor.env，修改后重启生效；需在 AH_ADMIN_USERS 指定单个管理员 |
 | AH_DATABASE_URL | 必填，控制面PostgreSQL连接串；服务不会在启动时自动建表 |
 | AH_DATABASE_POOL_MAX | 连接池上限，默认10，范围1–100 |
 | AH_TEST_DATABASE_URL | 仅测试使用，指向可丢弃的数据库；测试会创建并删除独立schema |
