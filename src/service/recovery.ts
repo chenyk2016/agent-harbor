@@ -1,3 +1,4 @@
+import { stopAndRemove } from "../runtime/providers/contracts.js";
 /** 服务崩溃不会被当作任务成功；先确认旧写入者停止，再允许新消息。 */
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,7 +18,7 @@ export async function recover(store: ServiceStore, controller: Controller) {
   const ids = new Set([
     ...(await store.sessions()).map(session => session.id),
     ...diskIds.filter((id): id is string => id !== undefined),
-    ...await controller.backend.ownedSessions(),
+    ...await controller.resident.findOwnedSessions(),
   ]);
   const releases: (() => Promise<void>)[] = [];
   try {
@@ -31,9 +32,8 @@ export async function recover(store: ServiceStore, controller: Controller) {
     for (const id of ids) {
       try {
         const session = await controller.store.load(id); // 损坏元数据不能覆盖为空记录。
-        for (const containerId of await controller.backend.forSession(id)) {
-          await controller.backend.stop(containerId);
-          await controller.backend.destroy(containerId);
+        for (const ref of await controller.resident.findOwned(id)) {
+          await stopAndRemove(controller.resident, ref);
         }
         for (const attempt of new Set([session.runnerId, session.attemptId])) if (attempt) {
           await clearStartupCredentials(join(controller.store.directory(id), "attempts", attempt));

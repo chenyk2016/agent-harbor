@@ -16,6 +16,10 @@ import { applicationExpertId, applicationSkillPluginPath } from "../shared/appli
 
 const exec = promisify(execFile);
 const project = "agent-harbor";
+export function dockerSessionName(attemptId: string) {
+  return `ah-${attemptId}`;
+}
+
 export class DockerBackend {
   readonly owner: string;
   constructor(readonly root: string) {
@@ -142,7 +146,7 @@ export class DockerBackend {
       throw new Error(
         "MCP_NATIVE_RUNTIME_UNSUPPORTED: select a native MCP runtime image",
       );
-    const name = `ah-${task.attemptId}`;
+    const name = dockerSessionName(task.attemptId);
     const existing = await this.inspect(name);
     if (existing) return name;
     // 先保存确定名称再请求创建（由 Controller 完成）；CLI 超时不代表创建失败，

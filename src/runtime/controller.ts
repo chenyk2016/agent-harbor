@@ -1,3 +1,5 @@
+import { DockerResidentProvider } from "../docker/resident-provider.js";
+import type { ResidentProvider } from "./providers/resident.js";
 /**
  * 会话运行控制器，运行在宿主机。
  * 接收任务与短期凭证，通过 Docker 启动 Runner，保存执行事件和会话状态。
@@ -55,6 +57,7 @@ export interface Conversation {
 export class Controller {
   readonly store: Store;
   readonly backend: DockerBackend;
+  readonly resident: ResidentProvider;
   /** 创建会话存储与 Docker 后端，并固定受信运行配置。 */
   constructor(
     root: string,
@@ -62,6 +65,7 @@ export class Controller {
   ) {
     this.store = new Store(root);
     this.backend = new DockerBackend(this.store.root);
+    this.resident = new DockerResidentProvider(this.backend);
   }
   /**
    * 可由另一个CLI进程调用：先留下取消标记，再终止并确认整个容器停止。

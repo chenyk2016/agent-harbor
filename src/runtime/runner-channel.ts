@@ -2,7 +2,7 @@
  * 宿主与常驻Runner之间的一条docker exec管道。
  * run发送一条消息并等待对应result；读取循环始终存在，不逐轮等待进程退出。
  */
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { RunnerTransport } from "./providers/resident.js";
 import { createInterface } from "node:readline";
 import type { RunnerCommand, RunnerEvent } from "../shared/runner-protocol.js";
 import type { Task } from "../shared/types.js";
@@ -40,17 +40,13 @@ export class RunnerChannel {
   readonly drained: Promise<void>;
 
   constructor(
-    readonly child: ChildProcessWithoutNullStreams,
+    readonly transport: RunnerTransport,
     readonly sessionId: string,
     readonly runnerId: string,
     private onEvent: (event: RunnerEvent) => Promise<void>,
     private onFailure: (error: Error) => void,
   ) {
-    child.on("error", error => this.fail(error));
-    child.stdin.on("error", error => this.fail(error));
-    child.once("exit", code => {
-      this.fail(new Error(`Resident Runner exited with ${code}`));
-    });
+    transport.onFailure(error => this.fail(error));
     this.drained = this.readEvents().catch(error => this.fail(error));
   }
 
@@ -75,11 +71,11 @@ export class RunnerChannel {
     if (this.failure || this.isClosing) {
       throw this.failure ?? new Error("Runner closing");
     }
-    this.child.stdin.write(JSON.stringify(command) + "\n");
+    this.transport.send(JSON.stringify(command) + "\n");
   }
 
   private async readEvents() {
-    for await (const line of createInterface({ input: this.child.stdout })) {
+    for await (const line of createInterface({ input: this.transport.output })) {
       if (this.isClosing) continue;
       const event: RunnerEvent = JSON.parse(line);
       if (event.sessionId !== this.sessionId || event.runnerId !== this.runnerId ||
@@ -123,9 +119,9 @@ export class RunnerChannel {
     if (this.isClosing) return;
     this.isClosing = true;
     if (!this.failure) {
-      this.child.stdin.write(JSON.stringify({ type: "close" }) + "\n");
+      this.transport.send(JSON.stringify({ type: "close" }) + "\n");
     }
-    this.child.stdin.end();
+    this.transport.end();
     this.fail(new Error("Runner closed"));
   }
 }

@@ -14,8 +14,9 @@ flowchart TD
   SSE -->|SSE补看与持续事件| CLI
   SSE -->|SSE补看与持续事件| WEB
   M --> C[runtime/Controller与Conversation]
-  C --> D[docker/DockerBackend]
-  C <-->|docker exec输入输出管道| R[agent/常驻Runner]
+  C --> P[runtime/providers：环境与通信接口]
+  P --> D[docker/DockerResidentProvider]
+  D <-->|docker exec 输入输出管道| R[agent/常驻Runner]
   D --> K[agent/Keeper]
   R <--> SDK[Claude SDK / Code]
   SDK --> G[获准模型网关]
@@ -47,7 +48,8 @@ flowchart TD
 | `service/recovery.ts` | 汇总目录/数据库/标签，确认停止旧容器，不重放任务 |
 | `clients/` | CLI、共用HTTP/SSE客户端及正式网页 |
 | `runtime/` | 会话锁、状态文件、原生恢复与Runner连接 |
-| `docker/` | 固定Docker CLI参数、归属检查、停止确认 |
+| `runtime/providers/` | 环境生命周期和 Runner 通信接口。引擎状态无法确认时拒绝继续 |
+| `docker/` | Docker 适配器、固定 CLI 参数、归属检查和停止确认 |
 | `agent/` | 容器内输入队列、SDK调用、事件转换、Keeper和沙箱 |
 | `shared/` | 协议、执行类型及容器路径约定 |
 
@@ -61,7 +63,7 @@ clientMessageId解决重复提交；messageId同时是执行attemptId；generati
 
 用户停止只针对messageId。含本地MCP时强制清理整个会话环境，避免MCP继续在后台执行；其他任务原生中断后等待本轮result，检查环境仍可用，再接受下一条；中断超时、任务总超时、协议异常及明确关闭会确认整个容器停止。后台任务可能跨原生中断继续；关闭环境才停止容器内全部进程。
 
-服务退出或崩溃后，首次恢复取得所有会话锁再清理旧容器。不能重新接管已经丢失的exec管道；未完成消息变成interrupted，不自动再执行。引擎未知保持reconciling，不允许新写入者。
+服务退出或崩溃后，首次恢复取得所有会话锁再清理旧容器。恢复沿用旧版会话文件和 Docker 归属标签。已断开的 exec 管道无法接管，未完成消息标记为 interrupted，不自动再执行。引擎未知保持reconciling，不允许新写入者。
 
 ## 当前取舍
 

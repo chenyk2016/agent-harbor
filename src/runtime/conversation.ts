@@ -14,6 +14,7 @@ import type {
   RunOptions,
 } from "./controller.js";
 import { exists, lockSession } from "./storage.js";
+import { stopAndRemove, type EnvironmentRef } from "./providers/contracts.js";
 import { RunnerChannel } from "./runner-channel.js";
 import type { RunnerEvent } from "../shared/runner-protocol.js";
 import type { Event, Session, Task } from "../shared/types.js";
@@ -34,7 +35,7 @@ interface Turn {
 export class ResidentConversation implements Conversation {
   // 环境资源：正常回合结束后继续保留；确认关闭后清空。
   private runnerChannel?: RunnerChannel;
-  private containerId?: string;
+  private environment?: EnvironmentRef;
   private runnerId?: string;
   private readonly leaseId = randomUUID();
   private heartbeatTimer?: ReturnType<typeof setInterval>;
@@ -96,14 +97,16 @@ export class ResidentConversation implements Conversation {
     }
   }
 
+  private async removeOwnedEnvironments() {
+    const provider = this.controller.resident;
+    for (const ref of await provider.findOwned(this.sessionId)) {
+      await stopAndRemove(provider, ref);
+    }
+  }
+
   /** 先确认旧写入者停止，再整理遗留状态和凭证；不重放未完成的输入。 */
   private async reconcilePreviousEnvironment() {
-    for (const containerId of await this.controller.backend.forSession(
-      this.sessionId,
-    )) {
-      await this.controller.backend.stop(containerId);
-      await this.controller.backend.destroy(containerId);
-    }
+    await this.removeOwnedEnvironments();
 
     this.session = await this.controller.store.load(this.sessionId);
     const previousAttempts = new Set([
@@ -231,17 +234,15 @@ export class ResidentConversation implements Conversation {
     }
     if (this.heartbeatError) throw this.heartbeatError;
 
-    if (this.containerId) {
-      const environment = await this.controller.backend.inspect(
-        this.containerId,
-      );
-      if (!environment?.running) await this.stopEnvironment();
+    if (this.environment) {
+      const state = await this.controller.resident.inspect(this.environment);
+      if (state !== "running") await this.stopEnvironment();
     }
     const previous = this.session;
     // 旧会话可能没有能力快照，恢复时仍沿用原生对话首次运行记录的镜像 ID。
     const pinnedImage = this.options.capabilities?.imageId ??
       (previous.sdkSessionId ? previous.imageId : undefined);
-    const imageId = await this.controller.backend.imageId(
+    const imageId = await this.controller.resident.resolveImage(
       pinnedImage ?? this.controller.profile.image,
     );
     if (
@@ -307,7 +308,7 @@ export class ResidentConversation implements Conversation {
       imageId,
       status: "starting",
       stopped: false,
-      containerId: this.containerId ?? `ah-${task.attemptId}`,
+      containerId: (this.environment ?? this.controller.resident.plannedRef(task.attemptId)).resourceId,
       runnerId: this.runnerId ?? task.attemptId,
     };
     return turn;
@@ -319,7 +320,8 @@ export class ResidentConversation implements Conversation {
 
     this.environmentCleanup = undefined;
     this.stderrWrites = Promise.resolve();
-    this.containerId = this.session.containerId;
+    const provider = this.controller.resident;
+    this.environment = provider.plannedRef(turn.task.attemptId);
     this.runnerId = turn.task.attemptId;
     const mcpServers = await prepareMcpStartup(
       this.directory,
@@ -338,24 +340,20 @@ export class ResidentConversation implements Conversation {
       JSON.stringify(connection),
       { mode: 0o600 },
     );
-    await this.controller.backend.create(
-      turn.task,
-      { ...this.controller.profile, image: this.session.imageId! },
-      this.directory,
-      turn.directory,
-      true,
-      this.leaseId,
-    );
+    this.environment = await provider.create({
+      task: turn.task,
+      profile: { ...this.controller.profile, image: this.session.imageId! },
+      directory: this.directory,
+      attemptDirectory: turn.directory,
+      leaseId: this.leaseId,
+    });
     if (turn.cancelled) throw new Error("Cancelled during create");
-    await this.controller.backend.startSession(this.containerId!);
+    await provider.start(this.environment);
     if (turn.cancelled) throw new Error("Cancelled during start");
 
-    const child = this.controller.backend.connect(
-      this.containerId!,
-      this.runnerId,
-    );
+    const transport = provider.openRunner(this.environment, this.runnerId);
     const channel = new RunnerChannel(
-      child,
+      transport,
       this.sessionId,
       this.runnerId,
       (event) => this.recordEvent(event),
@@ -365,7 +363,7 @@ export class ResidentConversation implements Conversation {
       },
     );
     this.runnerChannel = channel;
-    child.stderr.on("data", (chunk) => {
+    transport.diagnostics.on("data", (chunk) => {
       this.stderrWrites = this.stderrWrites.then(() =>
         appendFile(join(turn.directory, "stderr.log"), chunk, { mode: 0o600 }),
       );
@@ -451,10 +449,8 @@ export class ResidentConversation implements Conversation {
         this.runnerChannel &&
         !this.environmentCleanup
       ) {
-        const environment = await this.controller.backend.inspect(
-          this.containerId!,
-        );
-        if (!environment?.running) {
+        const state = await this.controller.resident.inspect(this.environment!);
+        if (state !== "running") {
           throw new Error("Session container stopped before turn completion");
         }
         // inspect期间管道也可能退出；不能只看刚取得的容器状态。
@@ -571,15 +567,12 @@ export class ResidentConversation implements Conversation {
     const channel = this.runnerChannel;
     channel?.close();
     this.runnerChannel = undefined;
-    const containerId = this.containerId;
+    const environment = this.environment;
     const runnerId = this.runnerId;
     this.environmentCleanup = (async () => {
-      if (containerId) {
-        await this.controller.backend.stop(containerId);
-        await this.controller.backend.destroy(containerId);
-      }
+      if (environment) await stopAndRemove(this.controller.resident, environment);
       // 先确认容器停止，再关闭宿主CLI连接、等事件消费结束，最后清凭证。
-      channel?.child.kill();
+      channel?.transport.disconnect();
       await channel?.drained;
       if (runnerId) {
         await clearStartupCredentials(
@@ -587,7 +580,7 @@ export class ResidentConversation implements Conversation {
         );
       }
       await this.stderrWrites;
-      this.containerId = undefined;
+      this.environment = undefined;
       this.runnerId = undefined;
     })();
     return this.environmentCleanup;
@@ -643,13 +636,8 @@ export class ResidentConversation implements Conversation {
         }
       }
       await this.stopEnvironment();
-      // 也覆盖create成功但响应丢失的容器；DockerBackend核对环境归属。
-      for (const containerId of await this.controller.backend.forSession(
-        this.sessionId,
-      )) {
-        await this.controller.backend.stop(containerId);
-        await this.controller.backend.destroy(containerId);
-      }
+      // Also discover an owned environment whose create response was lost.
+      await this.removeOwnedEnvironments();
       this.session.stopped = true;
       this.session.environment = "closed";
       await this.saveSession();
