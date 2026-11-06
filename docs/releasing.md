@@ -26,7 +26,7 @@ npm run release:source
 
 脚本先检查公开内容和历史，再从HEAD使用git archive导出带有`agent-harbor/`顶层目录的源码包，保存为 `var/releases/agent-harbor-<版本>-<提交前12位>.tar.gz`。不会把整个工作目录打包，也不会包含`.git`、本地环境文件、依赖或用户数据。
 
-上传前用 `tar -tzf` 检查目录，并核对压缩包的 SHA-256。解包后可直接按源码安装，源码包没有 Git 历史。在 Git 克隆中使用 `harbor package` 生成带文件清单和固定镜像 ID 的可运行服务包。 [发行包安装](deployment.md#固定版本与安装)
+上传前用 `tar -tzf` 检查目录，并核对压缩包的 SHA-256。解包后可直接按源码安装，源码包没有 Git 历史。在全新 Git 克隆中构建后，使用 `harbor package` 生成带文件清单和固定镜像 ID 的可运行服务包。 [发行包安装](deployment.md#固定版本与安装)
 
 创建GitHub仓库或上传Git分支是另一个明确动作，本地导出不执行这些操作。仓库保持`private: true`，防止意外npm publish；这不影响通过Git公开源码。
 
