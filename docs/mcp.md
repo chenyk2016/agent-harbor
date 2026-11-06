@@ -7,13 +7,10 @@
 ```sh
 npm ci
 npm run build
-# 缺少0.4.0/0.6.1基线时先构建；不覆盖正在使用的旧镜像。
-docker build -f infra/Dockerfile -t agent-harbor:0.4.0 .
-docker build -f infra/Dockerfile.skills -t agent-harbor:0.6.1 .
-docker build -f infra/Dockerfile.mcp-native -t agent-harbor:0.6.2 .
+docker build -f infra/Dockerfile.release -t agent-harbor:0.9.0-local .
 ```
 
-将服务的 `AH_IMAGE`、`AH_SKILL_IMAGE` 设置为 `agent-harbor:0.6.2`，让新建会话具有本地 MCP 启动器。已有会话固定旧镜像，必须另建使用新镜像的会话；关闭环境不改变原镜像快照。模板程序也必须存在于所选镜像内。运行版本固定 Claude Agent SDK 0.3.306、srt 0.0.81。
+将服务的 `AH_IMAGE`、`AH_SKILL_IMAGE` 设置为 `agent-harbor:0.9.0-local`，让新建会话具有本地 MCP 启动器。已有会话固定旧镜像，必须另建使用新镜像的会话；关闭环境不改变原镜像快照。模板程序也必须存在于所选镜像内。运行版本固定 Claude Agent SDK 0.3.306、srt 0.0.81。镜像使用项目锁文件，srt 从 Zod 4.6.7 的 `zod/v3` 入口加载兼容校验接口。 旧的 `infra/Dockerfile.mcp-native` 构建入口可为已构建的统一镜像另打标签。若统一镜像采用其他标签，用 `--build-arg HARBOR_RELEASE_IMAGE=镜像标签` 指定。
 
 升级前停止旧服务，并备份数据库和整个数据根（包括 `.service/.mcp-key`）。现有 SQL 表无需新增迁移。启动时核对旧 Worker 的归属并停止、清理；状态不明则拒绝启动。旧连接保留凭据与历史，但全部停用并标为待复核：打开连接、确认新的全服务授权范围，重新保存后才可启用。API 复核须带 `confirmAllTools: true`，继续提交 `allowedTools` 的旧客户端明确拒绝。旧 Binding 和审计表保留历史，本版不再读写其运行状态。旧 `image` 模板必须改为下文的固定命令，不能自动转换。
 
@@ -101,4 +98,4 @@ npm 禁用生命周期脚本；需要编译或自定义安装步骤的包可能�
 - `src/agent/mcp-launcher.ts`：干净环境、srt、安装和 stdio 进程。
 - `src/service/mcp/probe.ts` → `src/agent/mcp-probe.ts`：无模型的原生发现。
 
-`npm test`、`npm run check` 为工程检查；`AH_TEST_DATABASE_URL=... AH_IMAGE=agent-harbor:0.6.2 npm run verify:mcp` 使用实际 Docker/Claude Code 与本地模型夹具验证原生调用、依赖和取消，不等同真实模型或第三方账号验收。资源目录与沙箱设计保留在仓库的 `docs/design/resource-layout.md` 与 `docs/design/mcp-native-sandbox.md`。
+`npm test`、`npm run check` 为工程检查；`AH_TEST_DATABASE_URL=... AH_IMAGE=agent-harbor:0.9.0-local npm run verify:mcp` 使用实际 Docker/Claude Code 与本地模型夹具验证原生调用、依赖和取消，不等同真实模型或第三方账号验收。资源目录与沙箱设计保留在仓库的 `docs/design/resource-layout.md` 与 `docs/design/mcp-native-sandbox.md`。
