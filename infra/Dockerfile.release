@@ -1,0 +1,20 @@
+# Unified runtime: no dependency on unpublished local historical image tags.
+FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
+ARG BUILD_PROXY
+ENV HTTP_PROXY=${BUILD_PROXY} HTTPS_PROXY=${BUILD_PROXY} http_proxy=${BUILD_PROXY} https_proxy=${BUILD_PROXY}
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap socat python3 python3-pip python3-venv git ripgrep curl ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /platform/runtime
+COPY package.json package-lock.json ./
+RUN npm ci --proxy=${BUILD_PROXY} --omit=dev --workspaces=false --registry=https://registry.npmjs.org
+RUN python3 -m pip install --break-system-packages --no-cache-dir uv==0.9.5
+COPY dist/src ./dist/src
+COPY dist/src /opt/harbor-runtime
+RUN ln -s /platform/runtime/node_modules /opt/harbor-runtime/node_modules && mkdir -p /workspace /platform/state /platform/run /opt/harbor-skills && chown node:node /workspace /platform/state
+COPY infra/managed-settings.json /etc/claude-code/managed-settings.json
+COPY LICENSE NOTICE ./
+COPY LICENSES ./LICENSES
+ENV HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= HOME=/platform/state LANG=C.UTF-8 CLAUDE_CONFIG_DIR=/platform/state
+LABEL io.agent-harbor.experts="1" io.agent-harbor.workbuddy="1" io.agent-harbor.dependencies="1" io.agent-harbor.mcp-native="1" io.agent-harbor.admin-observation="1"
+USER node
+WORKDIR /workspace
+ENTRYPOINT ["node", "/platform/runtime/dist/src/agent/runner.js"]

@@ -1,0 +1,57 @@
+{
+  "formatVersion": 1,
+  "template": "react-node-v1",
+  "tables": {
+    "signups": {
+      "fields": {
+        "name": {
+          "type": "text",
+          "maxLength": 80
+        },
+        "email": {
+          "type": "text",
+          "maxLength": 160
+        }
+      },
+      "publicCreate": true,
+      "publicRead": false
+    }
+  },
+  "analytics": {
+    "schemaVersion": 1,
+    "events": {
+      "signup_started": {
+        "version": 1,
+        "source": "browser",
+        "properties": {}
+      },
+      "signup_submit_attempted": {
+        "version": 1,
+        "source": "browser",
+        "properties": {}
+      },
+      "signup_succeeded": {
+        "version": 1,
+        "source": "server",
+        "properties": {},
+        "binding": {
+          "kind": "table_created",
+          "table": "signups"
+        }
+      }
+    },
+    "primaryGoal": "signup_succeeded",
+    "funnels": [
+      {
+        "id": "signup",
+        "unit": "session",
+        "windowMinutes": 30,
+        "steps": [
+          "page_view",
+          "signup_started",
+          "signup_succeeded"
+        ]
+      }
+    ]
+  }
+}

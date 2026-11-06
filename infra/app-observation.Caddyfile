@@ -1,0 +1,23 @@
+# 合并到实际站点；不要用示例覆盖既有入口。JSON部署可用caddy adapt转换。
+:8080 {
+ log {
+  output file /var/log/caddy/application-access.json {
+   roll_size 10MiB
+   roll_keep 3
+   roll_keep_for 72h
+  }
+  format filter {
+   wrap json
+   fields {
+    request>remote_ip delete
+    request>remote_port delete
+    request>client_ip delete
+    request>headers delete
+    request>uri delete
+    resp_headers delete
+   }
+  }
+ }
+ # 实际应用路由由Harbor维护，自动log_append固定harbor_deployment。
+ respond "Replace this response with the existing Harbor routes" 404
+}

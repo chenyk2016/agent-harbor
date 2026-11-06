@@ -1,0 +1,82 @@
+:root {
+  font-family:
+    system-ui,
+    -apple-system,
+    "PingFang SC",
+    sans-serif;
+  color: #253633;
+  background: #f5f3ec;
+  font-size: 16px;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 64px 20px;
+}
+main {
+  max-width: 580px;
+  margin: auto;
+  background: white;
+  padding: 44px;
+  border-radius: 20px;
+  border: 1px solid #e4e7dd;
+}
+h1 {
+  font-size: 36px;
+  margin: 12px 0;
+}
+p {
+  line-height: 1.7;
+  color: #66736e;
+}
+.eyebrow {
+  color: #32654e;
+  font-size: 14px;
+}
+form {
+  margin-top: 30px;
+}
+label {
+  display: block;
+  margin-bottom: 20px;
+}
+input {
+  display: block;
+  margin-top: 8px;
+  width: 100%;
+  padding: 12px;
+  font: inherit;
+  border: 1px solid #cad3cc;
+  border-radius: 8px;
+}
+button {
+  background: #32654e;
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  width: 100%;
+  padding: 14px;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.6;
+}
+footer {
+  font-size: 13px;
+  color: #87948b;
+  margin-top: 24px;
+}
+@media (max-width: 500px) {
+  body {
+    padding: 20px 12px;
+  }
+  main {
+    padding: 24px;
+  }
+  h1 {
+    font-size: 28px;
+  }
+}

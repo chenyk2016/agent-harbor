@@ -1,0 +1,13 @@
+# Keep the existing baseline tag intact. Only trusted launch infrastructure belongs in this image.
+FROM agent-harbor:0.6.1
+USER root
+ARG BUILD_PROXY
+ENV HTTP_PROXY=${BUILD_PROXY} HTTPS_PROXY=${BUILD_PROXY}
+RUN npm install --prefix /opt/harbor-runtime --ignore-scripts --no-audit --no-fund @anthropic-ai/sandbox-runtime@0.0.81 @modelcontextprotocol/sdk@1.32.1
+COPY dist/src /platform/runtime/dist/src
+COPY dist/src/agent/mcp-launcher.js /opt/harbor-runtime/agent/
+COPY dist/src/service/mcp/builtin.js /opt/harbor-runtime/service/mcp/
+RUN mkdir -p /opt/harbor-skills
+ENV HTTP_PROXY= HTTPS_PROXY=
+LABEL io.agent-harbor.mcp-native="1"
+USER node

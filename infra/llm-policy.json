@@ -1,0 +1,19 @@
+{
+  "userRpmLimit": 60,
+  "models": {
+    "deepseek-flash": {
+      "timeoutSeconds": 180,
+      "inputCostPerToken": 0.0000003,
+      "outputCostPerToken": 0.0000012,
+      "cacheReadCostPerToken": 0.000000006,
+      "cacheWriteCostPerToken": 0.0000003
+    },
+    "deepseek-v4-pro": {
+      "timeoutSeconds": 600,
+      "inputCostPerToken": 0.00000132,
+      "outputCostPerToken": 0.00000396,
+      "cacheReadCostPerToken": 0.000000044,
+      "cacheWriteCostPerToken": 0.00000132
+    }
+  }
+}

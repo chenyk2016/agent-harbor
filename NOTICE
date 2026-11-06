@@ -1,0 +1,23 @@
+Agent Harbor
+Copyright 2026 Agent Harbor contributors.
+
+Agent Harbor's own source code is licensed under Apache-2.0.
+
+infra/seccomp.json is derived from Moby's default seccomp profile:
+https://github.com/moby/moby/blob/8af9fe3/vendor/github.com/moby/profiles/seccomp/default.json
+Upstream project: https://github.com/moby/profiles
+License: Apache-2.0; see LICENSES/moby-profiles-Apache-2.0.txt.
+Modifications: additional user-namespace initialization and mount rules for the
+native sandbox helper. The provenance and security tradeoffs are documented
+in infra/seccomp.md. JSON does not support an inline modification notice;
+this NOTICE and infra/seccomp.md identify the changed file and changes.
+
+@anthropic-ai/claude-agent-sdk and Claude Code are external dependencies,
+copyright Anthropic PBC and governed by their own license and legal terms:
+https://code.claude.com/docs/en/legal-and-compliance
+They are not relicensed by Agent Harbor. This source repository does not
+vendor the SDK, Claude Code binaries, installed packages or Docker images.
+
+Other dependencies and operating-system packages retain their own licenses.
+The dependency lockfile records package versions; it does not grant rights
+beyond the respective upstream licenses.

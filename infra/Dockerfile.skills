@@ -1,0 +1,13 @@
+# 同一发行版与SDK基线，提供uv/pip/venv与curl；不覆盖既有镜像。
+FROM agent-harbor:0.4.0
+USER root
+ARG BUILD_PROXY
+ENV HTTP_PROXY=${BUILD_PROXY} HTTPS_PROXY=${BUILD_PROXY}
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip python3-venv curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m pip install --break-system-packages --no-cache-dir uv==0.9.5
+COPY dist/src /platform/runtime/dist/src
+RUN mkdir -p /opt/harbor-skills
+ENV HTTP_PROXY= HTTPS_PROXY=
+LABEL io.agent-harbor.experts="1" io.agent-harbor.workbuddy="1" io.agent-harbor.dependencies="1"
+USER node

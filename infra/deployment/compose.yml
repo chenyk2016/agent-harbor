@@ -1,0 +1,60 @@
+services:
+  control-db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: harbor
+      POSTGRES_DB: harbor
+      POSTGRES_PASSWORD: ${AH_CONTROL_DB_PASSWORD:?required}
+    ports: ["127.0.0.1:${AH_CONTROL_DB_PORT:?required}:5432"]
+    volumes: ["control-data:/var/lib/postgresql"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harbor -d harbor"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  gateway-db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_DB: litellm
+      POSTGRES_PASSWORD: ${AH_GATEWAY_DB_PASSWORD:?required}
+    ports: ["127.0.0.1:${AH_GATEWAY_DB_PORT:?required}:5432"]
+    volumes: ["gateway-data:/var/lib/postgresql"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.106.1
+    depends_on:
+      gateway-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://litellm:${AH_GATEWAY_DB_PASSWORD}@gateway-db:5432/litellm
+      LITELLM_MASTER_KEY: ${AH_LITELLM_MASTER_KEY:?required}
+      LITELLM_SALT_KEY: ${AH_LITELLM_SALT_KEY:?required}
+      STORE_MODEL_IN_DB: "True"
+      AH_LANGFUSE_HOST: ${AH_LANGFUSE_HOST:-}
+      AH_LANGFUSE_PUBLIC_KEY: ${AH_LANGFUSE_PUBLIC_KEY:-}
+      AH_LANGFUSE_SECRET_KEY: ${AH_LANGFUSE_SECRET_KEY:-}
+      AH_LANGFUSE_CONTENT_MODE: ${AH_LANGFUSE_CONTENT_MODE:-metadata}
+      AH_LANGFUSE_CONTAINER_PROXY: ${AH_LANGFUSE_CONTAINER_PROXY:-}
+      NO_PROXY: localhost,127.0.0.1,host.docker.internal,gateway-db,control-db
+    ports: ["127.0.0.1:${AH_LITELLM_PORT:?required}:4000"]
+    volumes: ["../litellm.config.yaml:/app/harbor.yaml:ro", "../start-litellm.py:/app/harbor-start.py:ro", "../langfuse:/app/harbor-observation:ro"]
+    entrypoint: ["python", "/app/harbor-start.py"]
+    command: ["--port", "4000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveness', timeout=3).read()"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 60s
+
+volumes:
+  control-data:
+  gateway-data:

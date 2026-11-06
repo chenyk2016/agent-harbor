@@ -1,0 +1,41 @@
+# Dependencies, builds and local runtime data
+node_modules/
+dist/
+var/
+coverage/
+*.tsbuildinfo
+.cache/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Credentials: only the documented placeholder file is public
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite*
+*.db
+*.db-*
+*.log
+
+# Private workspace records and review material
+/PROJECT.md
+/AGENTS.local.md
+/docs/evidence/
+/private/
+/.private/
+*.bundle
+*.zip
+*.tar
+*.tar.gz
+
+docs/articles
+
+# Local editorial tooling and withdrawn design
+/.agents/
+/docs/specs/workbench-auth.md
+/.baoyu-skills/

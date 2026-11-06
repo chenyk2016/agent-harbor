@@ -1,0 +1,16 @@
+{
+  "admin": { "listen": "127.0.0.1:2019" },
+  "apps": {
+    "http": {
+      "servers": {
+        "harbor": {
+          "listen": ["127.0.0.1:8080"],
+          "routes": [
+            { "handle": [{ "@id": "harbor-application-routes", "handler": "subroute", "routes": [] }] },
+            { "handle": [{ "handler": "reverse_proxy", "upstreams": [{ "dial": "127.0.0.1:4318" }] }] }
+          ]
+        }
+      }
+    }
+  }
+}

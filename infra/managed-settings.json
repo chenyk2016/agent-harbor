@@ -1,0 +1,82 @@
+{
+  "permissions": {
+    "disableBypassPermissionsMode": "disable",
+    "deny": [
+      "Read(//platform/**)",
+      "Edit(//platform/**)",
+      "Read(//etc/claude-code/**)",
+      "Edit(//etc/claude-code/**)",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "allow": [
+      "Bash(uv:*)",
+      "Bash(pip:*)",
+      "Bash(pip3:*)",
+      "Bash(python -m pip:*)",
+      "Bash(python3 -m pip:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)"
+    ]
+  },
+  "allowManagedPermissionRulesOnly": true,
+  "allowManagedHooksOnly": true,
+  "disableCommandPluginSources": true,
+  "disableClaudeAiConnectors": true,
+  "strictKnownMarketplaces": [],
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": [],
+    "enableWeakerNestedSandbox": false,
+    "enableWeakerNetworkIsolation": false,
+    "filesystem": {
+      "disabled": false,
+      "allowManagedReadPathsOnly": true,
+      "allowWrite": [
+        "/session-env",
+        "/dependency-cache"
+      ],
+      "denyRead": [
+        "/platform",
+        "/etc/claude-code"
+      ],
+      "denyWrite": [
+        "/platform",
+        "/etc/claude-code"
+      ]
+    },
+    "network": {
+      "allowManagedDomainsOnly": true,
+      "allowedDomains": [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "registry.npmjs.org"
+      ],
+      "allowAllUnixSockets": false,
+      "allowLocalBinding": false,
+      "allowUnixSockets": []
+    },
+    "credentials": {
+      "envVars": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "ANTHROPIC_AUTH_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "MCP_TOKEN",
+          "mode": "deny"
+        }
+      ]
+    },
+    "allowNestedUserNamespaces": false
+  },
+  "requiredMinimumVersion": "2.1.306",
+  "cleanupPeriodDays": 7
+}

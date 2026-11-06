@@ -1,0 +1,5 @@
+{
+  "name": "builtin",
+  "version": "0.0.1",
+  "description": "Agent Harbor probe plugin: builtin namespace"
+}

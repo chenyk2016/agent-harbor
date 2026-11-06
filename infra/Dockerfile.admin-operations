@@ -1,0 +1,6 @@
+# Add metadata-only observation hooks to the existing native MCP/skills baseline.
+# Existing capability snapshots keep their pinned image; never overwrite the base tag.
+ARG BASE_IMAGE=agent-harbor:0.6.1
+FROM ${BASE_IMAGE}
+COPY dist/src /platform/runtime/dist/src
+LABEL io.agent-harbor.admin-observation="1"

@@ -1,0 +1,3 @@
+FROM agent-harbor:0.6.1
+COPY dist/src/agent/runner-options.js /platform/runtime/dist/src/agent/runner-options.js
+COPY dist/src/agent/runner.js /platform/runtime/dist/src/agent/runner.js

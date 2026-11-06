@@ -1,0 +1,29 @@
+name: Linux delivery acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  single-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run build
+      - run: docker build -f infra/Dockerfile.release -t agent-harbor:delivery-v29 .
+      - run: node tests/delivery-verification.mjs
+        env:
+          AH_DELIVERY_TEST_IMAGE: agent-harbor:delivery-v29
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: delivery-report
+          path: var/evidence/reliable-delivery/2026-11-04/integration-report.json

@@ -1,0 +1,21 @@
+*
+!package.json
+!package-lock.json
+!dist/
+!dist/src/
+!dist/src/**
+!infra/
+!infra/managed-settings.json
+!dist/tests/
+!dist/tests/docker-worker.js
+!dist/tests/policy-probe.js
+
+!LICENSE
+!NOTICE
+!LICENSES/
+!LICENSES/**
+
+!dist/tests/streaming-runner.js
+
+# The descriptor helper runs on the host service, never inside the Agent image.
+dist/src/service/files/workspace-access.py

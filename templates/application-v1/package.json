@@ -1,0 +1,21 @@
+{
+  "name": "harbor-created-application",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "express": "5.3.0",
+    "pg": "8.23.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "web-vitals": "6.2.3"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  }
+}
