@@ -298,7 +298,9 @@ export class ResidentConversation implements Conversation {
     };
     this.tasksByAttempt.set(task.attemptId, task);
     this.activeTurn = turn;
+    const environment = this.environment ?? this.controller.resident.plannedRef(task.attemptId, this.requiresDocker());
     this.session = {
+      runtimeBackend: environment.backendId,
       expertDigest: this.options.expert?.digest,
       capabilityDigest: this.options.capabilities?.digest,
       sessionId: this.sessionId,
@@ -308,10 +310,15 @@ export class ResidentConversation implements Conversation {
       imageId,
       status: "starting",
       stopped: false,
-      containerId: (this.environment ?? this.controller.resident.plannedRef(task.attemptId)).resourceId,
+      containerId: environment.resourceId,
       runnerId: this.runnerId ?? task.attemptId,
     };
     return turn;
+  }
+
+  private requiresDocker() {
+    return Boolean(this.options.expert || this.options.capabilities?.skills.length || this.options.localMcp?.length ||
+      Object.keys(this.options.mcpServers ?? {}).length || this.options.networkDomains?.length);
   }
 
   /** 只有首轮或环境重建才启动进程，正常后续轮次直接复用管道。 */
@@ -321,7 +328,7 @@ export class ResidentConversation implements Conversation {
     this.environmentCleanup = undefined;
     this.stderrWrites = Promise.resolve();
     const provider = this.controller.resident;
-    this.environment = provider.plannedRef(turn.task.attemptId);
+    this.environment = provider.plannedRef(turn.task.attemptId, this.requiresDocker());
     this.runnerId = turn.task.attemptId;
     const mcpServers = await prepareMcpStartup(
       this.directory,
@@ -346,6 +353,7 @@ export class ResidentConversation implements Conversation {
       directory: this.directory,
       attemptDirectory: turn.directory,
       leaseId: this.leaseId,
+      requiresDocker: this.requiresDocker(),
     });
     if (turn.cancelled) throw new Error("Cancelled during create");
     await provider.start(this.environment);
@@ -378,7 +386,8 @@ export class ResidentConversation implements Conversation {
     turn.forceStop ||= force;
     // create尚未返回时不能并行stop；finishTurn会清理迟到的创建结果。
     if (!this.runnerChannel) return;
-    if (force || this.options.localMcp?.length) {
+    if (force || this.options.localMcp?.length ||
+        (this.environment && this.controller.resident.stopOnCancel?.(this.environment))) {
       turn.forceStop = true;
       void this.stopEnvironment().catch(() => {});
       return;

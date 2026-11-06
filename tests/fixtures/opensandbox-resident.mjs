@@ -148,12 +148,17 @@ export class QualificationProvider {
     const file = join(this.intents, attempt + ".json");
     const intent = { sessionId: task.sessionId, attempt };
     await writeFile(file, JSON.stringify(intent), { mode: 0o600, flag: "wx", flush: true });
+    const profileResponse = await fetch(new URL(`/harbor-runner/v1/${this.docker.owner}`, this.origin), {
+      headers: { "OPEN-SANDBOX-API-KEY": this.apiKey },
+    });
+    if (!profileResponse.ok) throw new Error("Strict Runner profile unavailable");
+    const { epoch } = await profileResponse.json();
     const response = await this.api("/sandboxes", "POST", {
       image: { uri: profile.image },
       entrypoint: ["node", "/opt/opensandbox/runner-bridge.cjs", attempt, leaseId],
       timeout: 300,
       resourceLimits: { cpu: "2", memory: "4Gi" },
-      metadata: { "harbor.os.owner": this.docker.owner, "harbor.os.session": task.sessionId, "harbor.os.attempt": attempt },
+      metadata: { "harbor.os.owner": this.docker.owner, "harbor.os.session": task.sessionId, "harbor.os.attempt": attempt, "harbor.os.epoch": epoch },
       volumes: mounts.map(([path, mountPath, readOnly], index) => ({ name: "mount-" + index, host: { path }, mountPath, readOnly })),
     });
     if (!uuid.test(response.id)) throw new Error("Unexpected OpenSandbox resource ID");

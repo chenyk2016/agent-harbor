@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { join, resolve, relative, sep } from "node:path";
 import { Pool } from "pg";
+import { ConfiguredResidentProvider } from "../../runtime/providers/configured-resident.js";
 import { DockerBackend } from "../../docker/docker.js";
 import { offlineLock, compose, composeArgs } from "./install.js";
 import {
@@ -77,7 +78,7 @@ function command(c: Config, args: string[]) {
 }
 async function stopped(c: Config) {
   requireThat(
-    (await new DockerBackend(c.env.AH_DATA_DIR!).ownedSessions()).length === 0,
+    (await new ConfiguredResidentProvider(new DockerBackend(c.env.AH_DATA_DIR!)).findOwnedSessions()).length === 0,
     "STOP_ALL_OWNED_RUNNERS_BEFORE_BACKUP",
   );
 }

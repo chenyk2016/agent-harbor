@@ -18,13 +18,15 @@ export interface ResidentLaunch {
   directory: string;
   attemptDirectory: string;
   leaseId: string;
+  requiresDocker?: boolean;
 }
 
 export interface ResidentProvider extends SandboxProvider<ResidentLaunch> {
   /** Docker knows the resource name before create, even if the response is lost. */
-  plannedRef(attemptId: string): EnvironmentRef;
+  plannedRef(attemptId: string, requiresDocker?: boolean): EnvironmentRef;
   findOwnedSessions(): Promise<string[]>;
   resolveImage(image: string): Promise<string>;
   start(ref: EnvironmentRef): Promise<void>;
+  stopOnCancel?(ref: EnvironmentRef): boolean;
   openRunner(ref: EnvironmentRef, runnerId: string): RunnerTransport;
 }

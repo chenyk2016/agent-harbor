@@ -45,7 +45,7 @@ function integer(
 }
 export function createSessionRouter(
   manager: SessionManager,
-  controller: Pick<Controller, "store">,
+  controller: Pick<Controller, "store"> & Partial<Pick<Controller, "resident">>,
   files: WorkspaceFiles,
   skillModule?: SkillModule,
   experts?: ExpertService,
@@ -54,7 +54,7 @@ export function createSessionRouter(
   llm?: LlmService,
 ) {
   const router = Router({ caseSensitive: true });
-  const deletions = new ResourceDeletions(manager, controller.store.root, files, applications, llm);
+  const deletions = new ResourceDeletions(manager, controller.store.root, files, applications, llm, controller.resident);
   router.use(deletionRouter(deletions));
   if (llm) router.use(modelProbeRouter(llm, manager, controller.store, deletions));
   void deletions.resume().catch(() => console.error("Deletion recovery requires retry"));

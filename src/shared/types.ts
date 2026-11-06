@@ -49,6 +49,7 @@ export interface Session {
   attemptId?: string;
   status?: Status;
   containerId?: string;
+  runtimeBackend?: string; // Old records without a backend were created by Docker.
   imageId?: string; // 实际镜像内容 ID，用于检查后续恢复的版本兼容性。
   runnerId?: string; // 常驻Runner启动attempt，连接文件和全流日志放在该目录。
   environment?: "ready" | "closed" | "unknown"; // V2区分本轮结束与整个环境关闭。

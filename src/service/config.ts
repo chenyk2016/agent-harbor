@@ -19,6 +19,21 @@ export function profileFromEnvironment() {
   };
 }
 
+export function residentFromEnvironment(env: NodeJS.ProcessEnv = process.env) {
+  const backend = env.AH_RESIDENT_BACKEND ?? "docker";
+  if (backend === "docker") return;
+  if (backend !== "opensandbox") throw new Error("Invalid AH_RESIDENT_BACKEND");
+  if (process.platform !== "linux" || process.getuid?.() !== 1000)
+    throw new Error("OpenSandbox Runner requires a local Linux host and service UID 1000");
+  const origin = URL.parse(env.AH_OPENSANDBOX_RUNNER_ORIGIN ?? "");
+  if (!origin || origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" ||
+      !origin.port || origin.origin !== env.AH_OPENSANDBOX_RUNNER_ORIGIN)
+    throw new Error("Invalid AH_OPENSANDBOX_RUNNER_ORIGIN");
+  const key = env.AH_OPENSANDBOX_RUNNER_KEY;
+  if (!key?.trim() || key.length < 32) throw new Error("Invalid AH_OPENSANDBOX_RUNNER_KEY");
+  return { origin, key };
+}
+
 /** 固定公开origin用于回调、CSRF和Secure Cookie；永不从X-Forwarded-*推断。 */
 export function identityFromEnvironment(env: NodeJS.ProcessEnv = process.env, managedWallet = false) {
   const origin = env.AH_PUBLIC_ORIGIN;

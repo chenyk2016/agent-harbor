@@ -1,10 +1,10 @@
-import { mcpSandboxPolicy } from "../shared/sandbox-policy.js";
+import { prepareRunnerMounts } from "./runner-mounts.js";
 /**
  * 宿主机上的 Docker 操作封装，供 Controller 调用。
  * 负责固定规格的创建、启动、查询、停止与删除；会话状态由 Controller 保存。
  * 统一通过 Docker CLI 操作；参数数组直接传给进程，避免拼接 shell 字符串。
  */
-import { cp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { cp } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -154,39 +154,7 @@ export class DockerBackend {
     const seccompPath = fileURLToPath(
       new URL("../../../infra/seccomp.json", import.meta.url),
     );
-    // 用户键只由服务端生成；独立CLI没有用户身份时退回会话私有缓存。
-    const cacheKey =
-      task.dependencyCacheKey ??
-      createHash("sha256").update(`session:${task.sessionId}`).digest("hex");
-    if (!/^[a-f0-9]{64}$/.test(cacheKey))
-      throw new Error("Invalid dependency cache key");
-    const cacheDirectory = join(this.root, ".dependency-caches", cacheKey);
-    await mkdir(cacheDirectory, { recursive: true, mode: 0o700 });
-    await mkdir(join(directory, "dependency-env", "home"), {
-      recursive: true,
-      mode: 0o700,
-    });
-    // 每次创建均挂载当前管理员策略；下载域名与专家获准网络取并集。
-    const policy = JSON.parse(
-      await readFile(
-        new URL("../../../infra/managed-settings.json", import.meta.url),
-        "utf8",
-      ),
-    );
-    policy.sandbox.network.allowedDomains = [
-      ...new Set([
-        ...policy.sandbox.network.allowedDomains,
-        ...(task.networkDomains ?? []),
-      ]),
-    ];
-    const policyFile = join(attemptDirectory, "managed-settings.json");
-    await writeFile(policyFile, JSON.stringify(policy), { mode: 0o644 });
-    if (task.hasLocalMcp)
-      await writeFile(
-        join(attemptDirectory, "mcp-sandbox.json"),
-        JSON.stringify(mcpSandboxPolicy(policy, "/session-env/mcp")),
-        { mode: 0o644 },
-      );
+    const { cacheDirectory, policyFile } = await prepareRunnerMounts(this.root, task, directory, attemptDirectory);
     // 平台按应用专家快照装载技能包。它留在只读挂载内，与可发布源码分离。
     const applicationPlugin = task.expert?.expertId === applicationExpertId
       ? join(attemptDirectory, "application-skills")

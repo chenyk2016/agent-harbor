@@ -7,6 +7,9 @@ import type { SessionManager } from "../session-manager.js";
 import type { ApplicationService } from "../applications/service.js";
 import type { WorkspaceFiles } from "../files/workspace-files.js";
 import type { LlmService } from "../llm/service.js";
+import { stopAndRemove } from "../../runtime/providers/contracts.js";
+import type { ResidentProvider } from "../../runtime/providers/resident.js";
+import { ConfiguredResidentProvider } from "../../runtime/providers/configured-resident.js";
 import { DockerBackend } from "../../docker/docker.js";
 import { Store, lockSession } from "../../runtime/storage.js";
 import { fail } from "../types.js";
@@ -23,7 +26,7 @@ export interface DeletionJob {
   updatedAt: number;
 }
 export class ResourceDeletions {
-  readonly backend: DockerBackend;
+  readonly resident: ResidentProvider;
   private tasks = new Map<string, Promise<void>>();
   private readers = new Map<string, AbortController>();
   private closing = false;
@@ -33,8 +36,9 @@ export class ResourceDeletions {
     readonly files: WorkspaceFiles,
     readonly applications?: ApplicationService,
     readonly llm?: LlmService,
+    resident?: ResidentProvider,
   ) {
-    this.backend = new DockerBackend(root);
+    this.resident = resident ?? new ConfiguredResidentProvider(new DockerBackend(root));
     manager.deletions = this;
   }
   private async rows<T = DeletionJob>(query: SQL) {
@@ -203,16 +207,11 @@ export class ResourceDeletions {
     ]);
     const revocations = await Promise.allSettled([this.llm?.revokeSession(id)]);
     const failures = [...stops, ...revocations];
-    for (const container of await this.backend.forSession(id)) {
-      const [result] = await Promise.allSettled([
-        (async () => {
-          await this.backend.stop(container);
-          await this.backend.destroy(container);
-        })(),
-      ]);
+    for (const ref of await this.resident.findOwned(id)) {
+      const [result] = await Promise.allSettled([stopAndRemove(this.resident, ref)]);
       failures.push(result);
     }
-    if ((await this.backend.forSession(id)).length)
+    if ((await this.resident.findOwned(id)).length)
       throw Error("SESSION_STOP_UNCONFIRMED");
     const failure = failures.find((result) => result.status === "rejected");
     if (failure?.status === "rejected") throw failure.reason;

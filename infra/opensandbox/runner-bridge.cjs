@@ -2,13 +2,23 @@
 const { spawn } = require("node:child_process");
 const { createServer } = require("node:net");
 const { once } = require("node:events");
-const { chmodSync } = require("node:fs");
+const { chmodSync, statSync } = require("node:fs");
 
 const [runnerId, leaseId] = process.argv.slice(2);
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 if (!uuid.test(runnerId) || !uuid.test(leaseId)) process.exit(2);
 delete process.env.EXECD_ACCESS_TOKEN;
 delete process.env.EXECD_ENVS;
+const managerLease = process.env.HARBOR_MANAGER_LEASE;
+delete process.env.HARBOR_MANAGER_LEASE;
+function checkManager() {
+  try {
+    if (Date.now() - statSync(managerLease).mtimeMs <= 3000) return;
+  } catch {}
+  process.exit(1);
+}
+checkManager();
+setInterval(checkManager, 500).unref();
 const agent = "/platform/runtime/dist/src/agent/";
 const keeper = spawn(process.execPath, [agent + "keeper.js", leaseId], { stdio: "inherit" });
 keeper.on("error", () => process.exit(1));

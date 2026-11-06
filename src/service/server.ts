@@ -3,6 +3,7 @@ import { WorkbenchAuth } from "./identity/workbench.js";
 import { mkdir, chmod, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { once } from "node:events";
+import { ConfiguredResidentProvider } from "../runtime/providers/configured-resident.js";
 import { Controller } from "../runtime/controller.js";
 import { lockSession } from "../runtime/storage.js";
 import { ExpertService } from "./experts/service.js";
@@ -22,6 +23,7 @@ import { recover } from "./recovery.js";
 import { openDatabase, type DatabaseHandle } from "./db/client.js";
 import {
   profileFromEnvironment,
+  residentFromEnvironment,
   numberFromEnvironment,
   identityFromEnvironment,
 } from "./config.js";
@@ -102,7 +104,8 @@ try {
   const walletTimer = setInterval(() => { void wallet.tick().catch(() => console.error("Wallet monthly grants require retry")); }, 60_000);
   walletTimer.unref();
   const store = new ServiceStore(database.db);
-  const controller = new Controller(root, profileFromEnvironment());
+  const resident = residentFromEnvironment();
+  const controller = new Controller(root, profileFromEnvironment(), engine => new ConfiguredResidentProvider(engine, resident));
   const manager = new SessionManager(
     store,
     controller,

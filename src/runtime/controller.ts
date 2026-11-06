@@ -1,4 +1,5 @@
 import { DockerResidentProvider } from "../docker/resident-provider.js";
+import { stopAndRemove } from "./providers/contracts.js";
 import type { ResidentProvider } from "./providers/resident.js";
 /**
  * 会话运行控制器，运行在宿主机。
@@ -62,10 +63,11 @@ export class Controller {
   constructor(
     root: string,
     readonly profile: Profile = { ...defaultProfile },
+    createResident: (docker: DockerBackend) => ResidentProvider = docker => new DockerResidentProvider(docker),
   ) {
     this.store = new Store(root);
     this.backend = new DockerBackend(this.store.root);
-    this.resident = new DockerResidentProvider(this.backend);
+    this.resident = createResident(this.backend);
   }
   /**
    * 可由另一个CLI进程调用：先留下取消标记，再终止并确认整个容器停止。
@@ -83,6 +85,11 @@ export class Controller {
       ),
       "cancel\n",
     );
+    if (session.runtimeBackend && session.runtimeBackend !== "docker") {
+      const ref = { backendId: session.runtimeBackend, resourceId: session.containerId };
+      await stopAndRemove(this.resident, ref);
+      return;
+    }
     await this.backend.requestCancel(session.containerId);
     await this.backend.stop(session.containerId);
   }
@@ -128,9 +135,8 @@ export class Controller {
     signal?: AbortSignal,
   ) {
     // 单次run也必须先确认旧写入者停止，再创建环境。
-    for (const id of await this.backend.forSession(sessionId)) {
-      await this.backend.stop(id);
-      await this.backend.destroy(id);
+    for (const ref of await this.resident.findOwned(sessionId)) {
+      await stopAndRemove(this.resident, ref);
     }
     const previous = await this.store.load(sessionId);
     const imageId = await this.backend.imageId(this.profile.image);

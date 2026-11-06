@@ -701,7 +701,7 @@ test("restart refreshes actual endpoint ports and isolates failed applications f
 test("application direct deletion removes development conversation, revisions, deployment files and owned data while preserving its peer", async () => {
   const f = await fixture();
   try {
-    f.manager.deletions!.backend.forSession = async () => [];
+    f.manager.deletions!.resident.findOwned = async () => [];
     f.service.driver.command = async () => "";
     const dropped: string[] = [];
     let failDrop = true;

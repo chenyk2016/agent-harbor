@@ -42,6 +42,12 @@
 
 部分启用条件缺失时，工作台可以继续启动，查看启动日志、应用入口或 `harbor doctor` 的配置说明。已选择托管网关时，配置不完整或不可用会阻止模型任务，不会回退到旧全局凭据。 [模型网关](llm-gateway.md) · [应用创建](applications.md) · [访客认证](application-login.md)
 
+## 常驻 Runner 后端
+
+默认使用 `AH_RESIDENT_BACKEND=docker`。单机 Linux 可以为普通对话配置 `opensandbox`，同时填写 `AH_OPENSANDBOX_RUNNER_ORIGIN` 和 `AH_OPENSANDBOX_RUNNER_KEY`，指向同主机上带 Harbor 只读根规则的专用管理服务。带专家、个人技能或 MCP 的会话仍由 Docker 执行。私有应用预览有自己的配置。
+
+在隔离实例先验证。切换时停止 Harbor，保留数据根、PostgreSQL 和镜像，改后端再启动。服务会先按归属清理旧执行环境，确认停止后接单。未结束消息留在历史，用户可显式提交新一轮。确认切回时可移除 OpenSandbox Runner 配置。启动遇到未确认的创建请求时保留待核对状态，参见[部署和故障边界](../infra/opensandbox/README.md)。
+
 ## 宿主持久目录
 
 ```text

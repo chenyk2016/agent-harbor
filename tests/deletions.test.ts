@@ -61,7 +61,7 @@ async function fixture() {
     })),
   );
   const server = createApi(manager, controller);
-  manager.deletions!.backend.forSession = async () => [];
+  manager.deletions!.resident.findOwned = async () => [];
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     a = new ServiceClient(origin, "fixture-a"),
@@ -190,7 +190,7 @@ test("unknown engine cleanup retains a non-restorable checkpoint; retry and proc
       "private prior message",
     );
     await f.manager.store.transition(previous.message.id, "succeeded");
-    f.manager.deletions!.backend.forSession = async () => {
+    f.manager.deletions!.resident.findOwned = async () => {
       throw Error("engine unavailable");
     };
     const job = await f.a.request<any>("/sessions/" + s.id, "DELETE");
@@ -210,7 +210,7 @@ test("unknown engine cleanup retains a non-restorable checkpoint; retry and proc
       f.manager.owned("a", s.id),
       (e: any) => e.code === "RESOURCE_DELETING",
     );
-    f.manager.deletions!.backend.forSession = async () => [];
+    f.manager.deletions!.resident.findOwned = async () => [];
     const retried = await f.a.request<any>("/sessions/" + s.id, "DELETE");
     assert.equal(retried.id, job.id);
     assert.equal((await f.done(job.id)).state, "completed");
@@ -223,7 +223,7 @@ test("unknown engine cleanup retains a non-restorable checkpoint; retry and proc
       f.root,
       (f.manager.deletions as any).files,
     );
-    resumed.backend.forSession = async () => [];
+    resumed.resident.findOwned = async () => [];
     await resumed.resume();
     const pending = (await resumed.list("a")).find(
       (x) => x.resourceId === next.id,
@@ -244,12 +244,12 @@ test("credential revocation failure still stops owned containers and retains fil
     f.manager.onEnvironmentClose = async () => {
       throw Error("fixture gateway unavailable");
     };
-    f.manager.deletions!.backend.forSession = async () =>
-      present ? ["owned-fixture-container"] : [];
-    f.manager.deletions!.backend.stop = async () => {
+    f.manager.deletions!.resident.findOwned = async () =>
+      present ? [{ backendId: "docker", resourceId: "owned-fixture-container" }] : [];
+    f.manager.deletions!.resident.stopAndConfirm = async () => {
       stopped = true;
     };
-    f.manager.deletions!.backend.destroy = async () => {
+    f.manager.deletions!.resident.remove = async () => {
       present = false;
     };
     const job = await f.a.request<any>("/sessions/" + s.id, "DELETE");
