@@ -320,10 +320,10 @@ export function Composer({
                 w="34px"
                 h="34px"
                 minW="34px"
-                bg="brand.500"
+                bgGradient="linear(to-br, #0A84FF, #00C6FB)"
                 color="onBrand"
-                _hover={{ bg: "brand.600" }}
-                _active={{ bg: "brand.700" }}
+                _hover={{ bgGradient: "linear(to-br, #0071E3, #00B4E8)" }}
+                _active={{ bgGradient: "linear(to-br, #005BB5, #0097D6)" }}
                 _disabled={{
                   bg: "sunken",
                   color: "muted",

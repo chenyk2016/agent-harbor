@@ -177,7 +177,7 @@ export function StatusInline({ message }: { message?: Message | null }) {
 export function Mark({ small = false }: { small?: boolean }) {
   return (
     <Box
-      bgGradient="linear(to-br, #005BB5, #0A84FF)"
+      bgGradient="linear(to-br, #0A84FF, #00C6FB)"
       color="white"
       display="grid"
       placeItems="center"

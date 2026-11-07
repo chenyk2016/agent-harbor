@@ -587,7 +587,7 @@ function ApplicationEditor({ id }: { id: string }) {
             w="32px"
             h="32px"
             borderRadius="9px"
-            bgGradient="linear(to-br, #005BB5, #0A84FF)"
+            bgGradient="linear(to-br, #0A84FF, #00C6FB)"
             color="white"
             align="center"
             justify="center"

@@ -20,19 +20,19 @@ const options: Array<{
     value: "light",
     label: "浅色",
     icon: <Sun size={14} />,
-    swatch: ["#F5F5F7", "#FFFFFF", "#0A84FF"],
+    swatch: ["#FBFBFC", "#FFFFFF", "#0A84FF"],
   },
   {
     value: "dark",
     label: "深色",
     icon: <Moon size={14} />,
-    swatch: ["#161617", "#1C1C1E", "#4A9DFF"],
+    swatch: ["#0B0F19", "#111827", "#3B9EFF"],
   },
   {
     value: "system",
     label: "跟随系统",
     icon: <Monitor size={14} />,
-    swatch: ["#F5F5F7", "#1C1C1E", "#0A84FF"],
+    swatch: ["#FBFBFC", "#111827", "#0A84FF"],
     split: true,
   },
 ];
@@ -85,7 +85,7 @@ export function Appearance() {
                     <>
                       <Box flex={1} bg={option.swatch[0]} />
                       <Box flex={1} bg={option.swatch[1]} />
-                      <Box flex={1} bgGradient="linear(to-r, #0A84FF, #4A9DFF)" />
+                      <Box flex={1} bgGradient="linear(to-r, #0A84FF, #3B9EFF)" />
                     </>
                   ) : (
                     option.swatch.map((color) => (
