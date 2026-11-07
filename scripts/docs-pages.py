@@ -17,6 +17,13 @@ REPOSITORY_FILES = {
 }
 
 
+PRODUCT_SCREENSHOTS = {
+    "assets/product/workbench.png",
+    "assets/product/application-preview.png",
+    "assets/product/admin-users.png",
+}
+
+
 def nav_paths(entries):
     for entry in entries:
         for value in entry.values():
@@ -27,7 +34,7 @@ def nav_paths(entries):
 
 
 def on_files(files, config):
-    allowed = set(nav_paths(config.nav)) | {"assets/docs.css", "assets/docs.js"}
+    allowed = set(nav_paths(config.nav)) | {"assets/docs.css", "assets/docs.js"} | PRODUCT_SCREENSHOTS
     public = Files([
         file for file in files
         if file.src_dir in config.theme.dirs or file.src_uri in allowed

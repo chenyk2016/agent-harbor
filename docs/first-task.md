@@ -13,6 +13,10 @@
 
 ## 提交并核对产物
 
+[![已完成的示例任务。Agent 汇总报名渠道，右侧工作区列出导出的 CSV。](assets/product/workbench.png)](assets/product/workbench.png)
+
+*截图使用活动报名示例。工具记录和结果显示在对话中，生成的 CSV 可在「工作区 → 文件」找到。*
+
 创建一个名为 `sales.csv` 的文本文件，内容如下。
 
 ```csv

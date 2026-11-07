@@ -6,6 +6,12 @@
 
 创建或编辑应用时，可以点「应用登录」或在对话里说「只允许 Google 登录」。内置 Skill 指导 Claude 修改 `harbor-app.json` 的 `auth` 配置，并在应用里实现登录和退出入口。登录页与回跳由 Harbor 托管。新应用省略 `auth` 时默认公开。登录方式使用 `"auth": { "mode": "required", "providers": ["email_password", "google"] }`，列表可只选择一种。「工作台 → 用户」展示当前方式并管理访客账号。已受保护的应用改为 `"auth": { "mode": "public" }` 时，在构建预览或发布时确认开放。
 
+## 编辑和预览应用
+
+[![应用编辑页。左侧是创建技术沙龙报名页的对话，右侧是可交互的表单预览，顶部显示版本和发布按钮。](assets/product/application-preview.png)](assets/product/application-preview.png)
+
+*示例应用是技术沙龙报名页。左侧对话用来迭代，右侧验证表单，上方显示当前版本和发布入口。*
+
 ## 当前可用范围
 
 - 独立创建入口、应用列表、持续对话、右侧真实预览、桌面/手机宽度、文件浏览及上传。

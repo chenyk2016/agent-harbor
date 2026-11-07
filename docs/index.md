@@ -2,6 +2,12 @@
 
 <div class="docs-intro">在自己的机器上运行一个多用户 Agent 工作台。用网页或 CLI 提交任务，在隔离的会话环境中分析文件、修改代码，或把生成的 Web 应用发布到自己的服务。</div>
 
+[![Agent Harbor 工作台。左侧是会话，中间是报名渠道汇总和工具记录，右侧是生成的 CSV 文件。](assets/product/workbench.png)](assets/product/workbench.png)
+
+*示例任务把 32 条报名记录按渠道汇总，结果可在右侧工作区下载。点击图片可放大。*
+
+[看应用编辑与预览](applications.md#编辑和预览应用) · [看管理后台如何管理用户与额度](admin.md#管理用户和额度)
+
 ## 从哪里开始
 
 | 我想做什么 | 从这里开始 |
