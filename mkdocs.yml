@@ -1,11 +1,12 @@
 site_name: Agent Harbor 文档
-site_description: Agent Harbor 自托管安装、工作台使用、应用发布与运维手册
+site_description: Agent Harbor 是面向个人开发者和受信小团队的自托管 Claude Code 工作台，支持文件任务、Skills、MCP、对话创建 Web 应用、预览发布和应用数据分析。
 site_url: !ENV [HARBOR_DOCS_URL, '']
 repo_url: !ENV [HARBOR_DOCS_REPO, '']
 site_dir: var/docs-site
 strict: true
 theme:
   name: readthedocs
+  custom_dir: docs/theme
   locale: zh_CN
   navigation_depth: 3
   highlightjs: false
@@ -31,6 +32,7 @@ validation:
     absolute_links: warn
 nav:
   - 首页: index.md
+  - 产品功能与使用场景: product-overview.md
   - 开始使用:
       - 本地安装与启动: quickstart.md
       - 第一个 Agent 任务: first-task.md

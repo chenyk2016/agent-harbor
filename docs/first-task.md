@@ -1,3 +1,7 @@
+---
+description: 从接入模型到上传 CSV，使用 Agent Harbor 完成首个 Claude Code 任务，下载并核对文件产物。
+---
+
 # 第一个 Agent 任务
 
 从已能登录的 [本地实例](quickstart.md) 开始。下面用管理员开通模型，再用一段可独立核对的数据完成上传、执行和下载。

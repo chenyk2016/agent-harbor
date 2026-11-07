@@ -1,3 +1,7 @@
+---
+description: 在 Agent Harbor 中配置并测试 MCP 连接，让 Claude Code 使用远程 HTTP 服务、本地模板和脚本提供的工具。
+---
+
 # 基础 MCP 使用与边界
 
 本版采用 Claude Code 原生 MCP 客户端：HTTP 直接连接远程服务，stdio 由会话容器内的可信启动器经过 Anthropic Sandbox Runtime（srt）运行。Harbor 管理个人配置、密文凭据、脚本原件和环境生命周期。没有独立 MCP 网关、临时 Grant、固定会话 Binding 或逐工具白名单。
