@@ -29,6 +29,7 @@ export interface AppDeployment {
   hostPort: number;
   environment: AppEnvironment;
   visitorAuth?: VisitorDeployment;
+  previewParentOrigin?: string;
   /** Legacy rows use the existing Docker container name. */
   runtime?: EnvironmentRef;
   ownerOnly?: true;
@@ -92,6 +93,7 @@ export class AppDockerDriver {
     databaseUrl: string,
     observation?: { url: string; token: string },
     visitorAuth?: VisitorDeployment,
+    previewParentOrigin?: string,
   ): Promise<AppDeployment> {
     requireAppId(build.appId);
     requireAppId(deploymentId);
@@ -113,7 +115,9 @@ export class AppDockerDriver {
       deploymentId,
       basePath: build.basePath,
       databaseUrl,
-      ...(visitorAuth ? { visitorAuth, environment: build.target } : {}),
+      environment: build.target,
+      ...(visitorAuth ? { visitorAuth } : {}),
+      ...(build.target === "preview" && previewParentOrigin ? { previewParentOrigin } : {}),
       ...(observation ? { observation } : {}),
     };
     // 配置只含本应用的DML能力，不含平台/模型/MCP秘密；父目录0700不开放给其他宿主用户。
@@ -182,6 +186,7 @@ export class AppDockerDriver {
       hostPort: 0,
       environment: build.target,
       ...(visitorAuth ? { visitorAuth } : {}),
+      ...(build.target === "preview" && previewParentOrigin ? { previewParentOrigin } : {}),
     };
   }
   /** 启动候选容器并回读实际端口和身份，更新传入的部署描述。 */

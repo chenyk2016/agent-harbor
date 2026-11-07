@@ -67,7 +67,7 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
       });
   }
 
-  async create({ build, deploymentId, databaseUrl, visitorAuth, observation }: PreviewLaunch) {
+  async create({ build, deploymentId, databaseUrl, visitorAuth, observation, previewParentOrigin }: PreviewLaunch) {
     requireAppId(build.appId);
     requireAppId(deploymentId);
     if ((!this.accessKey && build.target !== "preview") || !["preview", "production"].includes(build.target) ||
@@ -80,8 +80,10 @@ export class OpenSandboxPreviewProvider implements PreviewProvider {
     await writeFile(configPath, JSON.stringify({
       appId: build.appId, revisionId: build.revisionId, buildId: build.id,
       deploymentId, basePath: build.basePath, databaseUrl,
+      environment: build.target,
       ...(this.accessKey ? { runtimeAccess: applicationRuntimeAccess(this.accessKey, deploymentId) } : {}),
-      ...(visitorAuth ? { visitorAuth, environment: build.target } : {}),
+      ...(visitorAuth ? { visitorAuth } : {}),
+      ...(build.target === "preview" && previewParentOrigin ? { previewParentOrigin } : {}),
       ...(observation ? { observation } : {}),
     }), { flag: "wx", mode: 0o444 });
     const resourceId = await this.client.create({

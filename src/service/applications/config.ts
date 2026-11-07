@@ -3,6 +3,7 @@ import { applicationDataRoot, observationDatabaseUrl, observationEnabled } from 
 import { CaddyApplicationEdge } from "./edge.js";
 import { visitorAuthOptions, type VisitorFeatureReporter } from "./visitor-auth/config.js";
 import type { ApplicationOptions } from "./service.js";
+import { numberFromEnvironment } from "../config.js";
 
 type ApplicationFeature = "applications" | "applicationObservation" | Parameters<VisitorFeatureReporter>[0];
 export type ApplicationFeatureReporter = (feature: ApplicationFeature, reason: string) => void;
@@ -93,6 +94,8 @@ export async function applicationOptions(
   }
   return {
     visitorAuth,
+    workbenchOrigin: process.env.AH_PUBLIC_ORIGIN ?? visitorAuth?.workbenchOrigin ??
+      `http://127.0.0.1:${numberFromEnvironment("AH_SERVICE_PORT", 4318)}`,
     openSandboxPreview,
     root,
     nodeBase:

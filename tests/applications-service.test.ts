@@ -101,6 +101,7 @@ async function fixture(withVisitorAuth: boolean | "email" = false) {
     dataAdminUrl: "postgres://fixture:fixture@127.0.0.1:1/fixture",
     nodeBase: "fixture",
     creators: new Set(["a"]), templateDirectory: "templates/application-v1",
+    workbenchOrigin: "https://studio.example.net",
     edge,
     ...(keys ? { visitorAuth: {
       authOrigin: "https://auth.example.com", appDomain: "apps.example.net",
@@ -146,9 +147,10 @@ async function fixture(withVisitorAuth: boolean | "email" = false) {
     data.set(appId + environment, value);
     return value;
   };
-  service.driver.create = async (build, id, _data, _observation, visitorAuth) => ({
+  service.driver.create = async (build, id, _data, _observation, visitorAuth, previewParentOrigin) => ({
     id,
     ...(visitorAuth ? { visitorAuth } : {}),
+    ...(build.target === "preview" && previewParentOrigin ? { previewParentOrigin } : {}),
     appId: build.appId,
     build,
     environment: build.target,
@@ -852,6 +854,7 @@ test("email-only deployment works without Google credentials while a Google depl
     const appId = created.app.id;
     await wait(async () => (await f.store.endpoint(appId, "preview")).state === "ready");
     assert.deepEqual(f.routes().find(item => item.appId === appId)?.visitorAuth?.providers, ["email_password"]);
+    assert.equal(f.routes().find(item => item.appId === appId)?.previewParentOrigin, "https://studio.example.net");
     const google = "改为 Google 登录";
     f.authByPrompt.set(google, { mode: "required", providers: ["google"] });
     const app = await f.store.owned("a", appId);
@@ -1002,6 +1005,37 @@ test("OpenSandbox preserves preview owner access and requires a stop before swit
   } finally {
     probe.closeAllConnections();
     await new Promise<void>(resolve => probe.close(() => resolve()));
+    await f.close();
+  }
+});
+
+test("public previews carry a workbench origin independently of login, including rebuilding an old revision", async () => {
+  const f = await fixture();
+  try {
+    const created = await f.service.create("a", "公开预览", "", randomUUID());
+    const appId = created.app.id;
+    assert.equal((await f.done(appId, created.operation.id)).state, "succeeded");
+    const revision = (await f.store.revisions(appId))[0];
+    const preview = await f.service.deploy("a", appId, revision.id, "preview", randomUUID());
+    assert.equal((await f.done(appId, preview.operation.id)).state, "succeeded");
+    const first = f.routes().find(route => route.environment === "preview")!;
+    assert.equal(first.previewParentOrigin, "https://studio.example.net");
+    assert.equal(first.visitorAuth, undefined);
+    const detail = await f.service.detail("a", appId);
+    assert.equal(detail.endpoints.find(endpoint => endpoint.environment === "preview")?.previewParentOrigin, first.previewParentOrigin);
+    assert.equal(detail.endpoints.find(endpoint => endpoint.environment === "preview")?.requiresLogin, false);
+    const endpoint = await f.store.endpoint(appId, "preview");
+    const paused = await f.service.pausePreview("a", appId, randomUUID(), endpoint.generation);
+    assert.equal((await f.done(appId, paused.operation.id)).state, "succeeded");
+    const rebuilt = await f.service.deploy("a", appId, revision.id, "preview", randomUUID());
+    assert.equal((await f.done(appId, rebuilt.operation.id)).state, "succeeded");
+    assert.equal(f.routes().find(route => route.environment === "preview")?.previewParentOrigin, first.previewParentOrigin);
+    const production = await f.service.deploy("a", appId, revision.id, "production", randomUUID());
+    assert.equal((await f.done(appId, production.operation.id)).state, "succeeded");
+    assert.equal(f.routes().find(route => route.environment === "production")?.previewParentOrigin, undefined);
+    assert.equal((await f.store.owned("a", appId)).headRevisionId, revision.id);
+    assert.equal(f.runs(), 0);
+  } finally {
     await f.close();
   }
 });

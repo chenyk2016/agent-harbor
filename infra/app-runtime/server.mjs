@@ -34,8 +34,10 @@ const router = express.Router({ caseSensitive: true });
 const observe = observations(configuration, manifest, pool);
 const publicIdentity = observe.identity;
 // 只有平台签发的测试部署配置能指定工作台，应用源码无权放开嵌入边界。
-const frameParent = configuration.environment === "preview" && configuration.visitorAuth?.previewParentOrigin
-  ? " " + new URL(configuration.visitorAuth.previewParentOrigin).origin : "";
+// 兼容旧的访客登录部署；公开应用使用独立的预览来源配置。
+const previewParentOrigin = configuration.previewParentOrigin ?? configuration.visitorAuth?.previewParentOrigin;
+const frameParent = configuration.environment === "preview" && previewParentOrigin
+  ? " " + new URL(previewParentOrigin).origin : "";
 // 健康检查既验证数据库可连，也返回固定部署身份，供平台核对端口指向。
 router.get("/__harbor/health", async (_request, response) => {
   try {
