@@ -1,3 +1,7 @@
+---
+description: 为 Agent Harbor 配置 Langfuse 模型与任务观测，核对任务、工具调用、模型 generation 和内容采集模式。
+---
+
 # 模型与任务观测
 
 Langfuse 是可选依赖。填写完整的三项配置会自动启用；全部留空就关闭，没有独立的 enabled 开关。支持日本区 Langfuse Cloud；同样可以配置其他明确的 HTTPS 地址。

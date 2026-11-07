@@ -2,6 +2,8 @@
 
 <div class="docs-intro">在自己的机器上运行一个多用户 Agent 工作台。用网页或 CLI 提交任务，在隔离的会话环境中分析文件、修改代码，或把生成的 Web 应用发布到自己的服务。</div>
 
+Agent Harbor 是一个自托管的 Claude Code 工作台，适合个人开发者和受信小团队。可以接入 Skills 和 MCP，通过对话创建 Web 应用，预览发布后查看应用数据，再继续迭代。 [查看产品功能与使用场景](product-overview.md)
+
 [![Agent Harbor 工作台。左侧是会话，中间是报名渠道汇总和工具记录，右侧是生成的 CSV 文件。](assets/product/workbench.png)](assets/product/workbench.png)
 
 *示例任务把 32 条报名记录按渠道汇总，结果可在右侧工作区下载。点击图片可放大。*
