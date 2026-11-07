@@ -28,9 +28,9 @@ export class DockerPreviewProvider implements PreviewProvider {
     return await this.owned(ref) ? [ref] : [];
   }
 
-  async create({ build, deploymentId, databaseUrl }: PreviewLaunch) {
+  async create({ build, deploymentId, databaseUrl, observation, visitorAuth, previewParentOrigin }: PreviewLaunch) {
     if (build.target !== "preview") throw new Error("Preview build required");
-    const deployment = await this.docker.create(build, deploymentId, databaseUrl);
+    const deployment = await this.docker.create(build, deploymentId, databaseUrl, observation, visitorAuth, previewParentOrigin);
     // AppDockerDriver creates in the default network. Place this pilot in a private
     // network before starting any untrusted process, including on a repeated create.
     const ref = { backendId: this.backendId, resourceId: deployment.container };

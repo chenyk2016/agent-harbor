@@ -8,6 +8,7 @@ export interface PreviewLaunch {
   deploymentId: string;
   databaseUrl: string;
   visitorAuth?: VisitorDeployment;
+  previewParentOrigin?: string;
   observation?: { url: string; token: string };
 }
 

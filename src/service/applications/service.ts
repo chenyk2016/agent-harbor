@@ -54,6 +54,8 @@ export interface ApplicationOptions {
   downloadProxy?: string;
   observation?: ObservationOptions;
   visitorAuth?: VisitorAuthOptions;
+  /** 服务端配置的工作台来源，独立于应用是否要求访客登录。 */
+  workbenchOrigin?: string;
   openSandboxPreview?: { appIds: Set<string>; origin?: URL; apiKey?: string; all?: boolean };
 }
 /** 给模型的应用开发约定：限定修改位置、数据声明和平台接口。实际权限与数据校验仍由运行器及服务端执行。 */
@@ -746,13 +748,15 @@ export class ApplicationService {
         revision.manifest.analytics,
       );
       const databaseUrl = this.data.connection(state, false, this.options.databaseHost);
+      const previewParentOrigin = artifact.target === "preview"
+        ? this.options.workbenchOrigin ?? visitorAuth?.previewParentOrigin : undefined;
       let deployment: AppDeployment;
       if (selected) {
-        const runtime = await this.openSandbox!.create({ build: artifact, deploymentId: id, databaseUrl, observation, visitorAuth });
+        const runtime = await this.openSandbox!.create({ build: artifact, deploymentId: id, databaseUrl, observation, visitorAuth, previewParentOrigin });
         deployment = { id, appId: artifact.appId, build: artifact, environment: artifact.target,
-          hostPort: Number(this.options.openSandboxPreview!.origin!.port), container: "", runtime, visitorAuth, ...(ownerOnly ? { ownerOnly: true } : {}) };
+          hostPort: Number(this.options.openSandboxPreview!.origin!.port), container: "", runtime, visitorAuth, previewParentOrigin, ...(ownerOnly ? { ownerOnly: true } : {}) };
       } else {
-        deployment = await this.driver.create(artifact, id, databaseUrl, observation, visitorAuth);
+        deployment = await this.driver.create(artifact, id, databaseUrl, observation, visitorAuth, previewParentOrigin);
         if (ownerOnly) deployment.ownerOnly = true;
         await this.driver.start(deployment);
       }
@@ -1088,9 +1092,10 @@ export class ApplicationService {
       endpoints: endpoints.map((endpoint) => {
         const deployment = deployments.find(item => item.id === endpoint.appliedDeploymentId)?.spec;
         const auth = deployment?.visitorAuth;
-        const previewParentOrigin = endpoint.environment === "preview" &&
-          auth?.previewParentOrigin === this.visitorAuth?.options.workbenchOrigin
-          ? auth?.previewParentOrigin : undefined;
+        const parent = deployment?.previewParentOrigin ?? auth?.previewParentOrigin;
+        const workbenchOrigin = this.options.workbenchOrigin ?? this.visitorAuth?.options.workbenchOrigin;
+        const previewParentOrigin = endpoint.environment === "preview" && parent === workbenchOrigin
+          ? parent : undefined;
         const loginProviders = auth ? auth.providers ?? visitorProviders : [];
         return {
           ...endpoint,

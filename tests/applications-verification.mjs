@@ -1,16 +1,22 @@
 /** 阶段A真实验证：隔离PG/Caddy、Git、依赖构建、应用镜像和实际HTTP。没有模型请求。 */
 import assert from "node:assert/strict";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID, randomBytes, generateKeyPairSync } from "node:crypto";
 import { mkdir, readFile, writeFile, cp } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { spawn } from "node:child_process";
 import { Pool } from "pg";
+import { Agent, setGlobalDispatcher } from "undici";
 import { ApplicationSources } from "../dist/src/service/applications/source-store.js";
 import { ApplicationBuilder } from "../dist/src/service/applications/builder.js";
 import { ApplicationData } from "../dist/src/service/applications/data.js";
 import { AppDockerDriver } from "../dist/src/service/applications/docker.js";
 import { CaddyApplicationEdge } from "../dist/src/service/applications/edge.js";
 import { parseManifest } from "../dist/src/service/applications/manifest.js";
+
+// This probe repeatedly replaces Caddy routes and stops their old upstreams.
+// Fresh connections keep transport reuse from obscuring the endpoint assertions.
+const dispatcher = new Agent({ pipelining: 0 });
+setGlobalDispatcher(dispatcher);
 
 const evidence = resolve(
   "var/evidence/app-builder-implementation/2026-10-26",
@@ -76,6 +82,9 @@ async function start(artifact, environment) {
     artifact,
     randomUUID(),
     data.connection(environment, false, "host.docker.internal"),
+    undefined,
+    undefined,
+    "https://studio.example.net",
   );
   deployments.push(deployment);
   await driver.start(deployment);
@@ -225,6 +234,10 @@ try {
   const v1 = await build(sourceA, appA, "production");
   const first = await start(v1.artifact, prod);
   await edge.replace([first]);
+  const productionCsp = (await fetch(edge.publicOrigin + first.build.basePath)).headers.get("content-security-policy");
+  assert.match(productionCsp, /frame-ancestors 'self';/);
+  assert.ok(!productionCsp.includes("studio.example.net"));
+  pass("production does not inherit the workbench embedding origin");
   await driver.activate(first);
   console.log("PUBLIC_APPLICATION", edge.publicOrigin + first.build.basePath);
   await writeFile(
@@ -285,6 +298,23 @@ try {
   const pv = await build(sourceA, appA, "preview"),
     previewDeployment = await start(pv.artifact, preview);
   await edge.replace([first, previewDeployment]);
+  const previewCsp = (await fetch(edge.publicOrigin + previewDeployment.build.basePath)).headers.get("content-security-policy");
+  assert.match(previewCsp, /frame-ancestors 'self' https:\/\/studio\.example\.net;/);
+  assert.ok(!previewCsp.includes("frame-ancestors *"));
+  pass("public preview permits only itself and the configured workbench");
+  // Old protected deployment configurations carry the parent under visitorAuth.
+  const keyPair = generateKeyPairSync("ed25519");
+  const legacy = await driver.create(pv.artifact, randomUUID(),
+    data.connection(preview, false, "host.docker.internal"), undefined,
+    { origin: "https://legacy.example.net", publicKey: keyPair.publicKey.export({ format: "der", type: "spki" }).toString("base64"),
+      providers: ["email_password"], previewParentOrigin: "https://studio.example.net" });
+  deployments.push(legacy);
+  await driver.start(legacy);
+  await driver.healthy(legacy);
+  const legacyUrl = `http://127.0.0.1:${legacy.hostPort}${legacy.build.basePath}`;
+  assert.match((await fetch(legacyUrl)).headers.get("content-security-policy"), /frame-ancestors 'self' https:\/\/studio\.example\.net;/);
+  assert.equal((await fetch(legacyUrl + "api/tables/signups")).status, 401);
+  pass("legacy login preview still embeds while rejecting unauthenticated business API requests");
   await submit(previewDeployment, "test-only");
   assert.deepEqual(await rows(preview), ["test-only"]);
   assert.deepEqual(await rows(prod), ["production-one"]);
@@ -393,14 +423,13 @@ try {
   await driver.activate(rollback);
   await driver.destroy(second.container);
   assert.deepEqual(await rows(prod), ["production-one", "production-two"]);
-  assert.equal(
-    (
-      await (
-        await fetch(edge.publicOrigin + rollback.build.basePath + "api/about")
-      ).json()
-    ).title,
-    "活动报名",
-  );
+  // Caddy reload may retire the previous keep-alive socket. Retry this read-only probe.
+  const restored = await wait(async () => {
+    const response = await fetch(edge.publicOrigin + rollback.build.basePath + "api/about");
+    assert.equal(response.status, 200);
+    return response.json();
+  });
+  assert.equal(restored.title, "活动报名");
   pass(
     "rollback runs exact retained image while keeping current production data",
   );
@@ -521,6 +550,7 @@ try {
     }
   await data?.close();
   await admin?.end();
+  await dispatcher.close();
   for (const name of [edgeName, pgName])
     try {
       await driver.destroy(name);
