@@ -1,15 +1,28 @@
 name: Documentation Pages
 
 on:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - 'docs/**'
-      - 'README.md'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Serialize the complete build/deploy workflow for each ref. Do not interrupt
+# an active deployment; GitHub keeps the latest pending update in the group.
+concurrency:
+  group: documentation-pages-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -21,27 +34,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
         id: pages
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
           source: ./docs
           destination: ./_site
       - uses: actions/upload-pages-artifact@v4
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           path: _site
 
   deploy:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       pages: write
       id-token: write
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

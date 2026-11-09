@@ -36,10 +36,25 @@ bundle exec jekyll build --destination ../var/docs-site
 
 ## 发布到 GitHub Pages
 
-1. 仓库管理员在 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。
-2. 将文档提交推送到 `main` 后，打开 **Actions → Documentation Pages → Run workflow**，选择 `main`。
-3. 工作流使用 GitHub 官方 Jekyll 构建、上传和部署动作。完成后从部署结果打开站点，检查首页与主要阅读路径。
+仓库首次设置时，在 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。之后按变更自动处理：
 
-文档相关的拉取请求只构建检查；正式部署仅由 `main` 的手动工作流触发。Pages 托管静态文档，Agent Harbor 工作台及其数据运行在部署者自己的服务上。
+| 操作 | 结果 |
+| --- | --- |
+| 推送到 `main`，包含 `docs/**` 或文档发布工作流的变化 | 自动构建，成功后自动发布 |
+| 对 `main` 提交同范围的拉取请求 | 只构建检查，不发布 |
+| 仅修改业务代码、根目录 README、`.env.example` 或内部任务记录 | 不触发文档发布 |
+| 需要重新发布现有文档 | 在 Actions → Documentation Pages → Run workflow 选择 `main` |
+
+仅在本地提交不会触发 GitHub 工作流，推送后才生效。文档目录内的图片、主题配置和依赖也在触发范围内。历史设计稿虽然不进入站点，修改它们仍会触发构建；统一按目录匹配，避免新增页面被遗漏。
+
+同一分支的构建与发布串行执行，正在运行的发布不会被中断，只保留最新待执行更新。构建或发布失败会在 Actions 中显示；不能把代码已推送当作文档已发布。
+
+## 任务交付时怎么处理
+
+影响用户功能、界面操作、默认值或配置的改动，需要同时检查并更新相关产品文档。文档和代码一起提交，在已获授权时推送到 `main`，即可触发自动发布；单纯更新内部任务单无需发布。
+
+推送后跟进 **Documentation Pages** 的构建与发布结果，再打开线上首页和改动页面核对。失败时先修复并重试，交付记录分别说明代码推送和文档发布状态。私有任务记录不会复制到文档站。
+
+Pages 只托管静态文档，Harbor 工作台及数据库的部署单独管理。
 
 主题与发布方式见 [GitHub Pages 的 Jekyll 说明](https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/about-github-pages-and-jekyll) 和 [Minima 主题说明](https://github.com/jekyll/minima/tree/v2.5.1)。
