@@ -15,3 +15,11 @@
 - Write commit titles as Conventional Commits, using `type(scope): description` with an optional scope. Describe the change in the title and refer to the commit by hash when reporting it.
 - Significant, validated version changes may receive an annotated Semantic Versioning tag in the form `MAJOR.MINOR.PATCH`, such as `0.10.0`. Keep existing tags on their original commits.
 - A milestone tag is separate from publishing a package or pushing to a remote.
+
+## Product documentation
+
+- Write public docs for a first-time user: purpose, prerequisites, steps, expected result and related help.
+- Organize the site by product questions and user tasks. Keep member usage separate from administrator setup.
+- Do not mix migration history, development plans, source tours or test evidence into product guides. Keep engineering material in repository docs excluded from the site.
+- Use GitHub Pages built-in Jekyll/Minima styles. Do not add custom CSS, JavaScript or layouts for documentation.
+- Check generated links and both desktop and mobile reading; simplify content when long tables overflow instead of adding styling.

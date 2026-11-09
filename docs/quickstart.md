@@ -1,10 +1,13 @@
-# 本地安装与启动
+---
+layout: page
+title: 安装与启动
+---
 
-这一页从已取得的 Agent Harbor 源码开始。先把工作台跑起来并用首次管理员密钥登录。配置模型和发送任务在下一页进行，以下步骤不会发起模型推理。
+这篇指南面向首次部署者：取得源码、启动实例、登录管理员。已有团队账号的成员可直接看 [第一个任务](first-task.md)。
 
 ## 检查环境
 
-准备 Node.js **24.19+**、npm **11+**、Python 3、Git、OpenSSL、运行中的 Docker Engine 和 Compose v2，以及至少 1 GiB 实例目录可用空间。推荐 Linux 专用主机。macOS 可用于 Docker 开发验收，原生沙箱兼容性以 `doctor --runtime` 的实际结果为准。
+准备 Node.js **24.19+**、npm **11+**、Python 3、Git、OpenSSL、运行中的 Docker Engine 和 Compose v2，以及用于镜像、依赖和任务文件的可用磁盘空间。推荐 Linux 专用主机。macOS 可用于本地运行，安装后用 `doctor --runtime` 检查实际兼容性。
 
 ```sh
 node --version
@@ -20,9 +23,11 @@ docker compose version
 
 ## 构建并安装
 
-从源码仓库根目录运行。保持同一个终端完成下列步骤。目录变量指向本次安装专属位置，首次使用时目录应为空。
+先取得源码，再保持同一个终端完成下面步骤。实例目录用于保存配置和数据，首次使用时应为空。
 
 ```sh
+git clone https://github.com/chenyk2016/agent-harbor.git
+cd agent-harbor
 npm ci
 npm run build
 
@@ -34,7 +39,7 @@ npm run harbor -- configure --dir "$HARBOR_DIR" --image "$HARBOR_IMAGE"
 npm run harbor -- install --dir "$HARBOR_DIR"
 ```
 
-`configure` 生成实例配置，`install` 启动实例专用 PostgreSQL 和 LiteLLM 并执行迁移。从 Git 仓库或解压后的源码包均可执行以上命令。每次升级使用新的镜像标签，以保留旧会话所固定的镜像。若使用维护者提供的固定发行包，参照 [发行包安装](deployment.md#固定版本与安装)。
+`configure` 生成实例配置；`install` 启动专用数据库和模型网关，并初始化所需数据结构。若已取得源码，可以跳过克隆和进入目录两行。
 
 ## 初始化管理员
 
@@ -43,7 +48,7 @@ AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" \
   npm run harbor -- init --dir "$HARBOR_DIR" --admin operator
 ```
 
-以上命令仅为本次初始化传入密钥。初始化后，通过受控方式读取实例目录中权限为 0600 的 `first-admin.key` 并保存到密码管理器。也可以在首次运行 `init` 前把密钥写进实例的私有 `harbor.env`。如果服务启动时加载了该变量，登录以服务配置的值为准。 [配置与轮换](identity.md#管理员访问密钥)
+初始化后，用编辑器打开实例目录中的 `first-admin.key`，将登录密钥保存到密码管理器。也可以在首次运行 `init` 前把密钥写进实例私有的 `harbor.env`，后续由该文件管理。 [管理员密钥设置](identity.md)
 
 ## 启动并登录
 
@@ -59,12 +64,14 @@ curl --fail --silent --show-error http://127.0.0.1:4318/api/health
 npm run harbor -- verify --dir "$HOME/agent-harbor-local"
 ```
 
-预期网页可打开、`/api/health` 返回 `ready: true`、免费检查通过。登录后，点首页的「接入模型」完成供应商、价格、额度及工具测试，再发送模型任务。
+预期网页可打开、`/api/health` 返回 `ready: true`、免费检查通过。登录后按 [模型与网关](llm-gateway.md) 接入首个模型，再发送任务。
 
 ## 停止与再次启动
 
 前台运行时用 Ctrl+C 停止 Harbor 服务。此操作保留实例数据和依赖容器。下次从同一个源码目录执行「启动并登录」中的 `node --env-file=...` 即可。若 Docker 或依赖也已停止，先保持 Harbor 停止，运行 `harbor install` 恢复依赖，再启动服务。
 
-默认使用 Docker 后端。可选的 OpenSandbox 管理服务需要另行安装及验证，参见 [OpenSandbox 部署](../infra/opensandbox/README.md)。
+默认使用 Docker 执行环境。可选执行后端见 [配置参考](configuration.md)。
 
-继续 [配置模型并完成第一个任务](first-task.md)，或查看 [启动排障](troubleshooting.md)。
+继续 [接入模型](llm-gateway.md) → [完成第一个任务](first-task.md)，或查看 [故障排查](troubleshooting.md)。
+
+[返回开始使用](getting-started.md)

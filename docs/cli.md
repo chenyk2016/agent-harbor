@@ -1,4 +1,7 @@
-# 命令行客户端
+---
+layout: page
+title: 命令行客户端
+---
 
 CLI 连接已经启动的 Harbor，会话和任务仍由服务管理。先按 [安装与启动](quickstart.md) 启动服务，并在工作台「用量与密钥」创建一个访问密钥。在本机私有环境提供 `AH_SERVICE_TOKEN`，团队部署同时把 `AH_SERVICE_URL` 指向实际 HTTPS 地址。
 
@@ -9,7 +12,7 @@ npm run cli -- init "分析示例"
 npm run cli -- list
 ```
 
-`init` 返回会话 ID。下面各命令中的 `SESSION_ID` 替换成实际 ID。任务执行前需有可用 [模型和额度](first-task.md#开通一个模型)。
+`init` 返回会话 ID。下面各命令中的 `SESSION_ID` 替换成实际 ID。任务执行前需有可用 [模型和额度](llm-gateway.md)。
 
 | 命令 | 用途 |
 | --- | --- |
@@ -21,4 +24,6 @@ npm run cli -- list
 | `npm run cli -- cancel SESSION_ID MESSAGE_ID` | 停止指定消息 |
 | `npm run cli -- close SESSION_ID` | 关闭当前工作环境，保留文件和对话 |
 
-交互中使用 `/exit` 退出只断开客户端。需要终止当前消息时使用 Ctrl+C 或 `cancel`。请求状态不明时先查会话，再以原文和原 `--request-id` 重试。详情见 [会话生命周期](session-lifecycle.md) 和 [HTTP 与 SSE](service.md)。
+交互中使用 `/exit` 退出只断开客户端。需要终止当前消息时使用 Ctrl+C 或 `cancel`。请求状态不明时先查会话，再以原文和原 `--request-id` 重试。详情见 [会话生命周期](session-lifecycle.md) 和 [故障排查](troubleshooting.md)。
+
+[返回使用指南](guide.md)

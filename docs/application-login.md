@@ -1,10 +1,42 @@
-# 应用访客登录
+---
+layout: page
+title: 应用访客登录
+---
 
-例如，你发布了报名应用，希望访客先登录才能填表。应用作者声明所需的登录方式，Harbor 负责登录页、回跳、应用会话及访客停用。应用作者的工作台账号和报名者的访客账号各自独立。
+访客登录用来限制应用的访问，例如要求报名者先登录再提交。访客账号与应用作者的工作台账号分别管理。
 
-## 为应用启用登录
+## 为应用开启登录
 
-管理员先在实例启用 [应用创建](applications.md) 和访客认证。应用作者打开编辑器中的「应用登录」，或让 Agent 修改 `harbor-app.json`：
+管理员需先配置 [应用认证服务](application-configuration.md#访客登录)。创建或编辑应用时，打开「应用登录」，或在对话中提出要求：
+
+> 这个报名应用要求邮箱密码登录。请添加登录、注册和退出入口，登录后才能提交，并在退出后更新页面状态。
+
+支持邮箱密码、Google，或两种方式同时提供。创建页会显示平台实际可用的方式。配置未就绪时，联系管理员开通。
+
+应用自行呈现登录、退出和账号信息，Harbor 提供托管登录页和登录后回跳。新应用默认公开；将已保护应用改为公开，需要在构建预览或发布时确认。
+
+## 检查登录流程
+
+1. 构建测试预览，用未登录状态打开。
+2. 点击应用里的登录入口，完成注册或登录。
+3. 确认回到原应用，能够执行需要身份的操作。
+4. 退出后再次操作，确认重新要求登录。
+5. 发布后，在正式地址独立检查同一流程。
+
+配置了内嵌邮箱登录时，可以在工作台右侧注册测试账号并原地打开预览。Google 授权使用独立登录入口。
+
+## 管理访客
+
+在「工作台 → 用户」选择测试或正式环境，查看和停用访客账号。停用会撤销该环境的会话；恢复后需要重新登录。
+
+- 邮箱密码注册无需邮件验证码，注册完成即可使用。
+- 测试与正式账号独立，同一邮箱可以使用不同密码。
+- Google 和邮箱密码的同邮箱记录不会自动合并。
+- 测试环境的账号和登录状态不会自动带到正式环境。
+
+## 用源码声明策略
+
+需要查看配置时，应用的 `harbor-app.json` 中用 `auth` 声明策略：
 
 ```json
 {
@@ -15,69 +47,6 @@
 }
 ```
 
-上面只展示 `auth` 片段，保留清单中其他配置。可以只选一种方式。公开应用可声明 `"auth": {"mode": "public"}`。新建应用省略策略时默认公开，已保护应用切回公开需确认。
+这是配置片段，应保留文件中的其他字段。`providers` 可以只选一种；公开策略使用 `"auth": {"mode": "public"}`。通常可以直接让编辑对话完成这项修改。
 
-应用自行添加登录和退出入口，并决定是否展示用户资料。Harbor 提供托管登录页、回跳及认证接口。用 `import.meta.env.BASE_URL` 拼接下列应用内路径。
-
-| 路径 | 应用用法 |
-| --- | --- |
-| `GET __harbor/auth/start` | 点击登录或执行需要身份的操作时跳转。用 `return` 指定登录后返回的应用内路径 |
-| `GET __harbor/auth/me` | 查询当前用户。收到 `401` 时按应用流程引导登录 |
-| `POST __harbor/auth/logout` | 退出后刷新应用自己的登录状态 |
-
-已有应用若依赖旧镜像内的默认账号条，先补齐应用自己的入口，再重新构建预览。用应用内入口验证注册、回跳和退出后，再发布固定版本并在正式地址独立验证。
-
-应用编辑器「工作台 → 用户」按环境查看和管理访客。邮箱密码注册无需 SMTP，完成后即可进入应用。预览和正式隔离，同一邮箱可以使用不同密码。Google 与密码方式的同邮箱记录也不自动合并。停用会撤销所选环境的应用会话，恢复后需重新登录。
-
-## 实例配置
-
-配置保存在管理员私有环境，不能传给生成应用。上线前准备独立 HTTPS 认证域、应用通配 DNS 与证书，并让 Caddy 管理接口只对受信服务可达。
-
-| 配置 | 含义 |
-| --- | --- |
-| `AH_APP_AUTH_ENABLED=0` | 关闭访客认证。省略时，所需配置就绪后自动启用 |
-| `AH_APP_AUTH_ORIGIN`、`AH_APP_AUTH_DOMAIN` | 专用 HTTPS 认证来源及应用域后缀 |
-| `AH_APP_PUBLIC_ORIGIN` | 应用模块使用的管理入口，与认证域和应用域区分 |
-| `AH_APP_AUTH_EDGE_DIAL`、`AH_APP_AUTH_EDGE_TOKEN` | Caddy 到 Harbor 的内部地址与校验密钥 |
-| `AH_APP_AUTH_SIGNING_KEY` | Base64 编码的 PKCS#8 DER Ed25519 私钥 |
-| `AH_APP_AUTH_POCKETBASE`、`AH_APP_AUTH_POCKETBASE_TOKEN` | 私有 PocketBase 地址及管理凭据。当前兼容配置在启用访客认证时仍检查这两项 |
-| `AH_APP_AUTH_BACKEND=better_auth`、`AH_APP_AUTH_BETTER_SECRET` | 新认证范围选用 Better Auth，并提供独立随机密钥（至少 32 字符）。省略后端时默认 PocketBase |
-| `AH_APP_AUTH_WORKBENCH_ORIGIN` | 可选。用于登录后的工作台内嵌预览，必须是符合实例同站约束的独立 HTTPS 来源 |
-| `AH_APP_AUTH_EMBEDDED_ORIGIN` | 可选。用于在工作台右侧注册或登录测试邮箱账号。使用与工作台、预览同站的独立 HTTPS 主机。应用通配域内可用平台保留的 `preview-auth` 子域 |
-
-兼容服务可使用经过隔离验证的 [PocketBase 0.41.1](https://pocketbase.io/docs/)。安装后绑定 Harbor 可访问的私有地址，持久化 `pb_data`，为 Harbor 配置专用超级用户令牌。备份包括控制库、访客认证私有配置和 PocketBase 数据。
-
-保留一个 `harbor-application-routes` 子树，由 Harbor 管理应用主机对应的路由。平台管理反代只匹配管理域。固定认证域可合并以下 Caddy 片段。
-
-```caddyfile
-auth.example.com {
-    handle /__harbor/visitor/* {
-        log_skip
-        reverse_proxy {$AH_APP_AUTH_EDGE_DIAL} {
-            header_up X-Harbor-Edge-Proof {$AH_APP_AUTH_EDGE_TOKEN}
-            header_up X-Harbor-Auth-IP {remote_host}
-            header_up -X-Harbor-Visitor-Write
-        }
-    }
-    handle {
-        respond 404
-    }
-}
-```
-
-Caddy 与 Harbor 必须使用相同的校验密钥。认证请求的表单、Cookie、查询参数及回跳凭据不得记入代理日志。修改配置后先执行控制库迁移，再重启并验证保护页面。配置缺失或未通过校验时，访客认证保持不可用，应用作者仍须为每个应用明确选择公开或要求登录。
-
-### 工作台右侧邮箱登录
-
-例如工作台使用 `https://studio.example.net`，预览使用 `https://<app>-preview.apps.example.net`，则内嵌认证可使用 `https://preview-auth.example.net`。为该主机配置 HTTPS 和同样的 Caddy 校验头，只代理 `/__harbor/visitor/login`、`/__harbor/visitor/password` 和 `/__harbor/visitor/register`，其他路径返回 404。普通认证域和 Google 回调继续使用 `AH_APP_AUTH_ORIGIN`。
-
-工作台用注册或登录后的测试会话就地打开应用。认证页只接受该工作台嵌入，密码由独立认证域接收。配置不可用或内嵌流程无法完成时，可使用现有独立登录入口。
-
-## 可选 Google 登录
-
-- Better Auth 的预览与正式使用不同的 Google Web OAuth 客户端。分别配置 `AH_APP_AUTH_BETTER_GOOGLE_PREVIEW_ID`、`AH_APP_AUTH_BETTER_GOOGLE_PREVIEW_SECRET` 及对应的 `PRODUCTION_ID`、`PRODUCTION_SECRET`。各客户端登记同一固定地址 `<AH_APP_AUTH_ORIGIN>/__harbor/visitor/better-auth/callback/google`，Harbor 按本次登录流程分流。
-- PocketBase 兼容入口沿用 `AH_APP_AUTH_GOOGLE_ID`、`AH_APP_AUTH_GOOGLE_SECRET` 及 `<AH_APP_AUTH_ORIGIN>/__harbor/visitor/google/callback`。
-
-真实 Google OAuth 需要在目标部署单独验证。使用专用测试账号验证授权、取消、回跳、退出和停用后，再开放正式应用。密码登录的浏览器验收和替身 OAuth 测试分别记录。
-
-更改默认后端只影响新建认证范围，既有 PocketBase 账号和应用身份保持原映射。切换旧应用前应在隔离环境演练备份恢复、业务归属与停用状态。
+[应用功能配置](application-configuration.md) · [创建与发布应用](applications.md) · [返回使用指南](guide.md)

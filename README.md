@@ -26,20 +26,24 @@ Agent Harbor 是一个自托管的 Claude Code 工作台，适合个人开发者
 
 ## 快速开始
 
-1. **安装并启动。** 准备 Node.js 24.19+、npm 11+、Python 3、Git、OpenSSL、Docker 和 Compose v2。构建服务与 Runner 镜像，执行 `harbor configure → install → init`，再启动宿主服务。首次初始化需要设置 `AH_BOOTSTRAP_ADMIN_KEY`。 [完整命令](docs/quickstart.md)
-2. **登录并接入模型。** 打开 `http://127.0.0.1:4318/`，用管理员密钥登录，点击「接入模型」。配置供应商和模型后运行测试，检查原生工具和流式响应。连接实际供应商测试会产生模型请求。 [首次模型与任务教程](docs/first-task.md)
-3. **完成第一个任务。** 上传教程里的 CSV，让 Agent 按类别汇总并生成文件，下载后核对结果。 [查看样例与预期输出](docs/first-task.md#提交并核对产物)
-
-会话默认由 Docker 管理。单机 Linux 上也可启用 OpenSandbox，由它调用同一台机器的 Docker 引擎。托管安装会准备 PostgreSQL、LiteLLM 和钱包的基础配置。工作台自助注册需要 HTTPS、邮箱密码登录和可用的托管钱包网关。应用创作需要另外配置创建者、应用数据库和 Caddy。 [查看功能启用条件](docs/configuration.md#功能何时启用)
+- **已有工作台账号**：登录团队工作台，选择模型，按 [第一个任务](docs/first-task.md) 上传示例文件，下载并核对结果。
+- **自己部署**：按 [安装与启动](docs/quickstart.md) 准备环境并登录管理员，再 [接入模型](docs/llm-gateway.md)，完成第一个任务。
+- **创建应用**：由管理员完成 [应用功能配置](docs/application-configuration.md)，再按 [创建、预览与发布](docs/applications.md) 从需求做到正式地址。
 
 ## 文档入口
 
-- **使用工作台** · [第一个任务](docs/first-task.md) · [CLI](docs/cli.md) · [会话生命周期](docs/session-lifecycle.md) · [工作区](docs/workspace-files.md)
-- **部署和管理** · [部署、备份与恢复](docs/deployment.md) · [管理员与身份](docs/identity.md) · [模型与网关](docs/llm-gateway.md) · [排障](docs/troubleshooting.md) · [OpenSandbox 配置与回切](infra/opensandbox/README.md)
-- **创建应用** · [应用创建与部署](docs/applications.md) · [访客登录](docs/application-login.md) · [运营观测](docs/application-observability.md)
-- **参与开发** · [系统架构](docs/architecture.md) · [HTTP 与 SSE](docs/service.md) · [贡献指南](CONTRIBUTING.md) · [测试与验收](docs/testing.md) · [发布文档站](docs/pages-publishing.md) · [源码发布](docs/releasing.md)
+| 你想了解 | 入口 |
+| --- | --- |
+| 产品功能、场景和适用范围 | [产品介绍](docs/product-overview.md) |
+| 首次安装或首次使用 | [开始使用](docs/getting-started.md) |
+| 对话、文件、技能、专家、MCP 和应用 | [使用指南](docs/guide.md) |
+| 账号、模型、额度、部署与配置 | [配置与管理](docs/manage.md) |
+| 核心概念和产品取舍 | [设计理念](docs/concepts.md) |
+| 使用疑问和运行问题 | [常见问题](docs/faq.md) · [故障排查](docs/troubleshooting.md) |
 
 [在线文档](https://chenyk2016.github.io/agent-harbor/) · [仓库内文档目录](docs/index.md)
+
+参与开发请阅读 [贡献指南](CONTRIBUTING.md)、[系统架构](docs/architecture.md) 和 [测试说明](docs/testing.md)。文档维护方式见 [维护文档站](docs/pages-publishing.md)。
 
 ## 安全与许可证
 

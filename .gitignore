@@ -8,6 +8,12 @@ coverage/
 __pycache__/
 *.pyc
 .DS_Store
+_site/
+.jekyll-cache/
+.sass-cache/
+/docs/.bundle/
+/docs/vendor/
+/docs/Gemfile.lock
 
 # Credentials: only the documented placeholder file is public
 .env

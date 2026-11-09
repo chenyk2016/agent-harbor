@@ -1,34 +1,35 @@
-# Agent Harbor
+---
+layout: default
+title: Agent Harbor 文档
+description: 了解、安装和使用 Agent Harbor，完成文件任务、创建应用，并管理团队、模型和额度。
+---
 
-<div class="docs-intro">在自己的机器上运行一个多用户 Agent 工作台。用网页或 CLI 提交任务，在隔离的会话环境中分析文件、修改代码，或把生成的 Web 应用发布到自己的服务。</div>
+# Agent Harbor 文档
 
-Agent Harbor 是一个自托管的 Claude Code 工作台，适合个人开发者和受信小团队。可以接入 Skills 和 MCP，通过对话创建 Web 应用，预览发布后查看应用数据，再继续迭代。 [查看产品功能与使用场景](product-overview.md)
+Agent Harbor 是一个自托管的 Claude Code 工作台。你可以交给 Agent 文件和任务，查看执行过程、下载结果；也可以通过对话创建 Web 应用，在预览中试用后发布到自己的服务器。
 
-[![Agent Harbor 工作台。左侧是会话，中间是报名渠道汇总和工具记录，右侧是生成的 CSV 文件。](assets/product/workbench.png)](assets/product/workbench.png)
+## 从这里开始
 
-*示例任务把 32 条报名记录按渠道汇总，结果可在右侧工作区下载。点击图片可放大。*
-
-[看应用编辑与预览](applications.md#编辑和预览应用) · [看管理后台如何管理用户与额度](admin.md#管理用户和额度)
-
-## 从哪里开始
-
-| 我想做什么 | 从这里开始 |
+| 你想解决的问题 | 阅读入口 |
 | --- | --- |
-| 先跑起来并登录 | [本地安装与启动](quickstart.md) |
-| 接入模型、上传文件并完成首项任务 | [第一个 Agent 任务](first-task.md) |
-| 构建一个可预览、可发布的应用 | [应用创建与部署](applications.md) |
-| 给团队开通账号并管理模型成本 | [管理员与身份](identity.md) · [模型与网关](llm-gateway.md) · [额度与计费](wallet.md) |
-| 部署到专用服务器，备份和恢复 | [托管部署与恢复](deployment.md) |
-| 查参数、接口或启动错误 | [配置参考](configuration.md) · [HTTP 与 SSE](service.md) · [故障排查](troubleshooting.md) |
+| 它适合我吗？能做什么？ | [产品介绍](product-overview.md) |
+| 我要在自己的机器上安装 | [开始使用](getting-started.md) |
+| 已有账号，想完成第一个任务 | [第一个任务](first-task.md) |
+| 我要上传文件、使用技能或创建应用 | [使用指南](guide.md) |
+| 我要接入模型、管理成员或配置服务 | [配置与管理](manage.md) |
+| 想理解会话、技能、应用和数据之间的关系 | [设计理念](concepts.md) |
+| 使用中有疑问或遇到问题 | [常见问题](faq.md) · [故障排查](troubleshooting.md) |
 
-## 一项任务如何运行
+## 一个典型任务
 
-以分析 CSV 为例。你在网页上传 CSV，要求 Agent 汇总数据并写出报告。Harbor 把消息交给当前会话的 Runner，Claude Code 在该会话的工作区读写文件，页面持续显示运行进度。关掉浏览器后任务继续。再次登录可以找回对话和产物。
+上传一份报名 CSV，要求 Agent 按渠道汇总，生成新的 CSV 和一份说明。你可以查看它用了哪些工具，下载结果，并继续提出修改要求。
 
-管理员从「接入模型」向导配置供应商、模型、价格与试用额度，通过工具及流式测试后开始对话。会话可以带上 [Skills](skills.md) 或 [MCP 工具](mcp.md)。应用数据库与 Caddy 等前置条件就绪后，可在同一工作台迭代应用、预览、发布和回滚。 [功能启用条件](configuration.md#功能何时启用)
+![工作台中展示任务过程，右侧文件区提供生成的 CSV。](assets/product/workbench.png)
 
-## 适用范围
+[跟着教程完成一次文件任务 →](first-task.md)
 
-当前部署目标是受信小团队和本地开发。运行模型需要你自己提供获准凭据。启用公网入口或让其他人运行代码前，先核对 [安全边界](../SECURITY.md) 和 [部署验收](deployment.md)。GitHub Pages 提供这套静态文档，Harbor 服务及用户数据运行在你自己的机器上。
+## 使用前了解
 
-Agent Harbor 自有源码采用 [Apache-2.0](../LICENSE)。Claude Agent SDK、Claude Code 及模型服务适用各自的许可与使用条款。
+Harbor 适合个人开发者和受信的小团队。服务和工作文件由你部署管理；使用远程模型或外部工具时，相应任务内容会发送给所选服务。模型费用由供应商收取，Harbor 中的额度用于管理平台内的使用。
+
+[GitHub 仓库](https://github.com/chenyk2016/agent-harbor) · [安全说明](https://github.com/chenyk2016/agent-harbor/blob/main/SECURITY.md) · [Apache-2.0 许可证](https://github.com/chenyk2016/agent-harbor/blob/main/LICENSE)

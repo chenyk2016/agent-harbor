@@ -1,34 +1,90 @@
-# 管理员与工作台登录
+---
+layout: page
+title: 账号与登录
+---
 
-工作台账号用来使用 Agent Harbor。应用访客使用独立的登录入口，见 [应用访客登录](application-login.md)。
+工作台账号用于登录 Agent Harbor、使用自己的会话和文件；创建的应用有独立访客账号，见 [应用访客登录](application-login.md)。
 
-| 场景 | 凭据与权限 |
-| --- | --- |
-| 首次安装 | `harbor init` 创建第一个内部管理员，初始密钥来自实例私有环境文件或本次命令的进程环境 |
-| 日常工作台登录 | 可使用访问密钥，或在配置后使用 Better Auth 邮箱密码。已有外部 OIDC 部署可沿用其配置 |
-| CLI 和脚本 | 使用所属用户的访问密钥作为 Bearer 凭据 |
-| 模型推理 | 使用配置在网关中的供应商凭据，与人员登录密钥分开 |
+## 选择登录方式
 
-管理员权限由私有配置 `AH_ADMIN_USERS` 中的内部用户 ID 决定。`harbor init --admin operator` 会写入该 ID。公开注册和第一个登录者都不会自动取得管理员权限。
+| 方式 | 适合谁 | 需要什么 |
+| --- | --- | --- |
+| 访问密钥 | 管理员首次登录、个人使用、CLI 和脚本 | 属于本实例用户的 Harbor 访问密钥 |
+| 邮箱密码 | 团队成员日常登录 | 管理员配置固定访问地址和认证密钥 |
+| OIDC 单点登录 | 已有统一身份系统的团队 | 管理员配置身份提供方和回调地址 |
+
+模型供应商的 API Key 用于推理，不能作为工作台登录密钥。管理员权限由 `AH_ADMIN_USERS` 中的内部用户 ID 决定；注册账号或第一个登录都不会自动取得管理员权限。
 
 ## 管理员访问密钥
 
-- 托管安装按启动命令加载实例的 `harbor.env`。用 `npm run server` 启动源码服务时读取项目根目录的 `.env`。
-- 首次 `init` 需要 `AH_BOOTSTRAP_ADMIN_KEY`，接受 32 至 128 个 ASCII 字母、数字、下划线或短横线。仅随命令传入时，之后可用实例中 `first-admin.key` 保存的密钥登录。
-- 要通过环境文件管理密钥，在服务实际加载的文件中设置 `AH_BOOTSTRAP_ADMIN_KEY` 和单个 `AH_ADMIN_USERS`。重启时服务采用配置值。轮换后旧密钥无法建立新登录，已有浏览器会话按原有效期处理，其他个人密钥不受影响。通过托管安装识别并撤销的初始密钥不会因为删除变量而恢复。
+首次安装按 [安装指南](quickstart.md) 执行 `harbor init`。初始化需要 `AH_BOOTSTRAP_ADMIN_KEY`，格式为 32 至 128 个 ASCII 字母、数字、下划线或短横线。仅通过初始化命令传入时，密钥会保存在实例的私有 `first-admin.key` 文件中，请另存到密码管理器。
+
+需要从配置文件管理或轮换密钥时，在服务实际加载的私有环境文件中填写：
+
+```dotenv
+AH_ADMIN_USERS=operator
+AH_BOOTSTRAP_ADMIN_KEY=replace-with-a-private-random-key-at-least-32-characters
+```
+
+`AH_ADMIN_USERS` 在此方式下必须只有一个管理员 ID。托管安装加载实例的 `harbor.env`；`npm run server` 加载项目根目录的 `.env`。修改后重启服务，使用新密钥登录。旧密钥不能建立新登录，已有浏览器登录仍按原有效期处理。
 
 ## 启用邮箱密码
 
-1. 先按 [托管部署指南](deployment.md) 备份并迁移控制库。团队部署给回环服务配置 HTTPS 反向代理。
-2. 在实例的私有 `harbor.env` 中设置 `AH_PUBLIC_ORIGIN` 为用户打开的确切来源（协议、域名和非默认端口，无末尾斜线），并设置至少 32 字符的随机 `AH_WORKBENCH_AUTH_SECRET`。
-3. 若希望完成管理员验证后再开放注册，先显式设置 `AH_WORKBENCH_REGISTRATION=false`。为现有管理员创建登录身份时，按 [受控绑定流程](deployment.md#工作台邮箱密码登录) 执行，把邮箱密码绑定到已有内部 ID，例如 `operator`。这样账号继续访问原会话、文件及余额。
-4. 重启服务，在浏览器里验证邮箱登录后的管理员权限，再检查访问密钥仍能作为兜底。
+在实例私有 `harbor.env` 中设置：
 
-省略 `AH_WORKBENCH_REGISTRATION` 时，HTTPS、邮箱登录和托管钱包网关就绪后自动开启成员自助注册。设置 `AH_WORKBENCH_REGISTRATION=false` 后重启可关闭。注册填写邮箱和密码，无邮箱验证码。新用户获得一次 **10 元模型额度**，属于 Harbor 内部账本。关闭注册只影响后续开户，已开通账号仍可登录。
+```dotenv
+AH_PUBLIC_ORIGIN=https://harbor.example.com
+AH_WORKBENCH_AUTH_SECRET=replace-with-a-private-random-secret-at-least-32-characters
+AH_WORKBENCH_REGISTRATION=false
+```
 
-## 管理账号与密钥
+将访问地址替换为团队实际使用的 HTTPS 地址，不带路径或末尾斜线。托管安装已生成认证密钥，可保留生成值。配置 HTTPS 的步骤见 [团队部署](deployment.md)。
 
-- 管理员从 [管理后台](admin.md) 查看用户、额度和模型使用，按权限停用或恢复账号。
-- 个人访问密钥在工作台「用量与密钥」管理。撤销后，用对应客户端核对访问已被拒绝。
-- 若设置 `AH_KEY_LOGIN=false`，会关闭工作台的网页密钥登录，要求已有其他网页认证方式。CLI 的 Bearer 密钥入口仍可用。
-- 备份和恢复应覆盖控制库与私有实例配置。恢复后分别验证管理员权限、会话归属、文件与余额。
+管理员可以把邮箱密码绑定到初始化时创建的管理员账号。准备一个权限为 `0600` 的私有 JSON 文件，内容如下：
+
+```json
+{"email":"operator@example.com","password":"replace-with-a-private-password"}
+```
+
+在项目根目录执行，把 `operator` 和路径换成实际值：
+
+```sh
+node --env-file=/srv/harbor-instance/harbor.env \
+  dist/src/service/identity/bind-workbench.js \
+  operator /secure/workbench-credentials.json
+```
+
+完成后删除临时凭据文件，重启服务，通过 HTTPS 用邮箱密码登录，确认能够进入管理后台。
+
+## 开放成员注册
+
+邮箱登录、HTTPS 和托管钱包网关都就绪后，省略 `AH_WORKBENCH_REGISTRATION` 或设为 `true` 会开放自助注册。设为 `false` 并重启可关闭；已开通的账号仍能登录。
+
+注册使用邮箱和密码，无需邮箱验证码。新用户按当前注册赠送规则获得一次模型额度，默认 10 元；这是 Harbor 内部额度。管理员在 [计费设置](wallet.md) 调整赠送金额。
+
+## 配置 OIDC 单点登录
+
+在身份提供方创建机密 Web 客户端，把回调地址设为：
+
+```text
+https://harbor.example.com/api/auth/oidc/callback
+```
+
+在私有环境文件中配置并重启：
+
+```dotenv
+AH_PUBLIC_ORIGIN=https://harbor.example.com
+AH_OIDC_ISSUER=https://identity.example.com
+AH_OIDC_CLIENT_ID=replace-with-client-id
+AH_OIDC_CLIENT_SECRET=replace-with-private-client-secret
+```
+
+身份提供方须支持 `client_secret_post` 和 RS256/JWKS 身份令牌。登录后确认工作台中的内部用户 ID，再按实际授权维护 `AH_ADMIN_USERS`。
+
+## 个人密钥和共享电脑
+
+成员在「用量与密钥」创建或撤销个人访问密钥。CLI 使用个人密钥，见 [命令行使用](cli.md)。设置 `AH_KEY_LOGIN=false` 只关闭网页登录密钥入口，CLI 仍可使用 Bearer 密钥；关闭前先确认其他网页登录方式正常。
+
+浏览器会保存草稿和会话选择。共享电脑使用后应退出登录；退出会清理当前用户的浏览器本地内容，服务端会话和文件会保留。
+
+[返回配置与管理](manage.md)

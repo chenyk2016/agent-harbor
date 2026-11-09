@@ -1,109 +1,260 @@
-# 配置与数据目录
+---
+layout: page
+title: 配置参考
+---
 
-推荐从 [托管安装](quickstart.md) 开始。该方式生成实例私有 `harbor.env`，服务通过 `node --env-file=...` 加载。手工部署源码时可复制 `.env.example` 为 `.env`，由 `npm run server` 加载。Node 启动时，已导出的同名环境变量优先于文件值。控制面使用 PostgreSQL 18，最低为 17。
+Harbor 的部署配置保存在私有环境文件中；模型、成员和价格等日常设置在管理后台完成。
 
-| 配置 | 默认值/用途 |
-| --- | --- |
-| AH_GATEWAY_URL | http://host.docker.internal:8080，容器可访问的获准网关 |
-| AH_GATEWAY_TOKEN | 旧全局网关的凭据。托管 LiteLLM 模式使用独立配置 |
-| AH_MODEL | claude-sonnet-4-6，以网关支持范围为准 |
-| AH_IMAGE | Runner 镜像。托管安装写入 `configure --image` 指定的版本 |
-| AH_DATA_DIR | 服务默认var/service-sessions；cli:local默认var/sessions |
-| AH_SERVICE_URL | CLI连接地址，默认http://127.0.0.1:4318 |
-| AH_SERVICE_TOKEN | CLI开发访问密钥，与网关凭证独立 |
-| AH_SERVICE_PORT | 服务本地监听端口，默认4318；始终绑定127.0.0.1 |
-| AH_IDLE_TIMEOUT_MS | 服务任务结束后的空闲回收，默认900000 |
-| AH_TASK_TIMEOUT_MS | 单轮总超时，默认0（无平台总时限）；设为正数后超时会强制关闭环境 |
-| AH_MAX_TURNS / AH_MAX_BUDGET_USD | 默认均为 0，即不设平台轮数和 SDK 估算费用上限 |
-| AH_INTERRUPT_TIMEOUT_MS | 原生中断等待时限，默认5000；超时强制关闭 |
-| AH_CAPACITY | 最多打开中的环境数，默认4，包含启动和空闲 |
-| AH_EVIDENCE_DIR | 部分验证脚本的输出位置，默认var/evidence |
-| AH_BOOTSTRAP_ADMIN_KEY | 管理员访问密钥。可放入服务读取的 .env 或 harbor.env，修改后重启生效；需在 AH_ADMIN_USERS 指定单个管理员 |
-| AH_DATABASE_URL | 必填，控制面PostgreSQL连接串；服务不会在启动时自动建表 |
-| AH_DATABASE_POOL_MAX | 连接池上限，默认10，范围1–100 |
-| AH_TEST_DATABASE_URL | 仅测试使用，指向可丢弃的数据库；测试会创建并删除独立schema |
+## 修改哪里，什么时候生效
 
-执行配置只由受信服务部署者提供，不透传浏览器输入。SDK预算在同一次query跨消息累计，不是租户硬配额；模型网关密钥和计费配置见[模型与网关](llm-gateway.md)与[额度与计费](wallet.md)。旧开发密钥文件在启动时导入PostgreSQL；V6本人密钥接口创建/撤销即时生效。
+按 [安装指南](quickstart.md) 创建的实例使用 `<实例目录>/harbor.env`：
+
+```sh
+node --env-file=/absolute/instance/harbor.env dist/src/service/server.js
+```
+
+源码手工部署可复制 `.env.example` 为 `.env`，由 `npm run server` 加载。已在进程环境中导出的同名变量优先于文件值。修改环境文件后重启服务；需要同时交给网关的设置，还须按相应功能说明重新创建网关容器。
+
+环境文件包含数据库密码和密钥，应限制访问并随实例备份，不加入版本库。
+
+## 基础配置
+
+托管 `configure` 会生成下列实例配置，一般无需逐项手填。
+
+- `AH_DATABASE_URL`
+
+  必需，工作台 PostgreSQL 连接串；托管安装准备数据库与表结构
+
+- `AH_DATA_DIR`
+
+  文件和会话数据目录；托管实例为其 `data/`，源码默认 `var/service-sessions`
+
+- `AH_IMAGE`
+
+  执行任务的固定镜像，由 `configure --image` 指定
+
+- `AH_SKILL_IMAGE`
+
+  准备技能依赖使用的镜像，托管安装与任务镜像一致
+
+- `AH_SERVICE_PORT`
+
+  工作台回环监听端口，默认 `4318`
+
+- `AH_PUBLIC_ORIGIN`
+
+  浏览器实际访问来源，例如 `https://harbor.example.com`，无末尾斜线
+
+- `AH_ADMIN_USERS`
+
+  管理员内部用户 ID，以逗号分隔；初始化命令写入首个管理员
+
+- `AH_BOOTSTRAP_ADMIN_KEY`
+
+  首次初始化必需；服务启动时也可用来管理单个管理员的访问密钥
+
+新建实例时，端口可通过 `configure` 的 `--port`、`--db-port`、`--gateway-port`、`--gateway-db-port` 设置。默认分别为 `4318`、`55432`、`4320`、`55433`；Linux 另用工作台端口减 1 作为内部推理入口。已有实例不能重新 `configure`。
 
 ## 功能何时启用
 
-托管安装已准备数据库、LiteLLM、钱包地址和工作台认证密钥。已有安装中显式关闭的配置继续生效。配置变更后重启服务。
+功能满足前置条件后启用；明确关闭的设置优先。缺少可选功能配置时，可通过 `harbor doctor` 查看提示。
 
-| 功能 | 自动启用条件 | 显式关闭 |
-| --- | --- | --- |
-| 托管 LiteLLM | 管理 URL、推理 URL、管理密钥齐全，且服务成功初始化网关 | `AH_LLM_ENABLED=false` |
-| 人民币钱包 | 托管 LiteLLM 可用，且已配置 Runner 可达的 `AH_WALLET_INFERENCE_URL` | `AH_WALLET_ENABLED=false` |
-| 工作台邮箱密码登录 | 固定 `AH_PUBLIC_ORIGIN`、至少 32 字符的 `AH_WORKBENCH_AUTH_SECRET`、认证表可用 | 通过移除认证密钥关闭邮箱密码入口，先验证其他登录方式 |
-| 工作台自助注册 | 工作台邮箱密码登录可用、公开来源是 HTTPS、托管钱包网关可用 | `AH_WORKBENCH_REGISTRATION=false` |
-| 应用创建 | 应用访问来源、创建者名单、应用数据库与 Caddy 管理地址已配置，服务检查数据库与 Caddy 就绪 | `AH_APPLICATIONS_ENABLED=0` |
-| 应用访客登录 | 应用创建可用，认证域、应用域、网关认证和凭据配置通过校验。每个应用另行声明登录策略 | `AH_APP_AUTH_ENABLED=0` |
-| 应用观测与只读问数 | 应用可用且观测库已迁移。问数还需要托管钱包网关 | `AH_OBSERVATION_ENABLED=0` 或仅关闭问数的 `AH_APP_ANALYSIS_ENABLED=0` |
-| Langfuse | 配置地址、公钥和密钥三项 | 留空三项 |
+- **模型网关**
 
-部分启用条件缺失时，工作台可以继续启动，查看启动日志、应用入口或 `harbor doctor` 的配置说明。已选择托管网关时，配置不完整或不可用会阻止模型任务，不会回退到旧全局凭据。 [模型网关](llm-gateway.md) · [应用创建](applications.md) · [访客认证](application-login.md)
+  启用条件：管理地址、推理地址、管理密钥齐全且可用。
 
-## 常驻 Runner 后端
+  关闭方式：`AH_LLM_ENABLED=false`。
 
-默认使用 `AH_RESIDENT_BACKEND=docker`。在单机 Linux 上设为 `opensandbox`，并填写 `AH_OPENSANDBOX_RUNNER_ORIGIN` 和 `AH_OPENSANDBOX_RUNNER_KEY`，对话、专家、Skills、各类 MCP、设置页 MCP 测试、只读问数、Skill 依赖安装、应用构建和本地 CLI 执行均使用同主机的专用管理服务。CLI 也需要以能访问同一数据根和 Unix socket 的 Linux UID 1000 运行。
+- **内部额度计费**
 
-同时设置 `AH_APP_RUNTIME_BACKEND=opensandbox`，应用预览和正式运行也由 OpenSandbox 管理。默认沿用 Runner 的地址和密钥。专用管理服务须开启应用配置目录，并使用本机 Docker 引擎。参见[管理服务部署和应用回切](../infra/opensandbox/README.md)。
+  启用条件：托管模型网关和可达的计费入口。
 
-在隔离实例先验证。切换时停止 Harbor，保留数据根、PostgreSQL 和镜像，改后端再启动。服务会先按归属清理旧执行环境，确认停止后接单。未结束消息留在历史，用户可显式提交新一轮。确认切回时可移除 OpenSandbox Runner 配置。启动遇到未确认的创建请求时保留待核对状态，参见[部署和故障边界](../infra/opensandbox/README.md)。
+  关闭方式：`AH_WALLET_ENABLED=false`。
 
-## 宿主持久目录
+- **工作台邮箱登录**
 
-```text
-<AH_DATA_DIR>/
-├── .service/                      不挂载进容器，目录权限0700
-│   ├── .lock                      数据根独占锁
-│   └── access-keys.json            userId与token哈希，权限0600
-└── <session-uuid>/
-    ├── workspace/                 用户文件
-    ├── claude-state/              原生上下文与会话记录
-    ├── session.json               最近一轮与容器事实
-    ├── .lock                      会话执行锁
-    └── attempts/
-        ├── .leases/<lease-id>     每次open的独立心跳
-        └── <message-id>/
-            ├── task.json          本轮正文及执行规格
-            ├── connection.json    启动Runner的那轮保存连接；关闭后清空
-            ├── events.jsonl       本轮执行事件
-            ├── runner-events.jsonl 仅启动轮，保留整个Runner事件
-            ├── stderr.log         启动轮的内部诊断
-            └── cancel             取消标记
-```
+  启用条件：固定访问来源、至少 32 字符认证密钥、可用认证表。
 
-实际进入执行层的消息才增加attempt。去重、忙时拒绝及交给SDK前就取消的消息仍保存在数据库，不一定有attempt目录。服务历史只从PostgreSQL读取，JSONL用于执行诊断。
+  关闭方式：移除认证密钥前先确认其他登录方式可用。
 
-控制面使用PostgreSQL：接收、去重、状态与事件在同一事务提交；同会话用行锁串行化，活动消息由部分唯一索引约束，事件编号用原子自增分配。数据包含用户正文、回答和工具记录；不进入Git。历史不会自动删除。可通过[删除操作](deletion.md)清理指定会话，定期[停机备份](deployment.md#停机备份与新实例恢复)。
+- **成员自助注册**
 
-## 数据库迁移
+  启用条件：邮箱登录、HTTPS 和托管钱包网关就绪。
 
-表结构由`migrations/*.sql`定义，用`npm run db:migrate`作为独立部署步骤应用，服务启动不会自动建表。已有SQLite控制面用`npm run db:import -- <control.sqlite>`导入空目标；导入保留原ID、撤销状态和事件编号，拒绝非空目标与重复执行。完整切换、核对与回退边界见[迁移说明](migration.md)。
+  关闭方式：`AH_WORKBENCH_REGISTRATION=false`。
 
-## 容器目录
+- **应用创建**
 
-| 路径 | 用途 |
-| --- | --- |
-| /workspace | 用户工作区，持久读写 |
-| /platform/runtime | 镜像内程序与依赖，只读 |
-| /platform/state | 原生状态，受信程序可写，项目工具受策略限制 |
-| /platform/run | 任务、连接及心跳，只读挂载 |
-| /etc/claude-code | 管理员配置，只读 |
-| /tmp | 容器临时区；原生沙箱还可能提供独立临时视图 |
+  启用条件：创建者名单、应用访问来源、应用数据库和 Caddy 已配置并可用。
 
-修改infra/managed-settings.base.json后运行npm run policy。生成器读取src/shared/paths.ts的保护根，生成原生文件工具和Bash沙箱规则。Runner不加载项目settings或任意MCP配置；策略意图不等于完整安全验收。
+  关闭方式：`AH_APPLICATIONS_ENABLED=0`。
 
-## 浏览器身份与本地数据
+- **应用访客登录**
 
-网页由同一个服务提供。浏览器使用`ah_browser` HttpOnly、SameSite=Strict Cookie，固定8小时有效；登录哈希持久化，服务重启后有效期内可继续登录。写接口要求同源Origin和X-Harbor-Client:web。X-Harbor-User用于拒绝另一标签页换账号后旧页面的请求，授权仍以Cookie中的服务端身份为准。CLI的Bearer接口保持兼容。
+  启用条件：应用创建和认证配置就绪，每个应用选择登录策略。
 
-服务仍监听回环。配置AH_PUBLIC_ORIGIN=https://...后Cookie附加Secure，Origin校验使用固定公开地址，不能信任转发头。登录与管理员权限配置见[管理员与身份](identity.md)；HTTPS反代和真实供应商须独立验收。
+  关闭方式：`AH_APP_AUTH_ENABLED=0`。
 
-localStorage只保存按用户分开的会话选择、草稿、待确认请求ID及原文，不保存任何访问密钥或网关凭证。退出登录清除当前用户的本地内容，不删除服务端记录。共享电脑上应退出登录；草稿仍属于敏感工作内容。
+- **应用观测**
 
-## V6身份数据与用户策略
+  启用条件：应用功能和观测库就绪。
 
-PostgreSQL控制面包含users、external_identities、login_sessions、user_keys、usage_entries及usage_baselines表，旧SQLite会话和消息需通过导入脚本搬迁。业务Cookie和CLI密钥明文不落库，外部身份token不持久化。AH_ADMIN_USERS指定内部用户ID，AH_KEY_LOGIN=false关闭网页登录开发密钥；CLI Bearer仍保留。
+  关闭方式：`AH_OBSERVATION_ENABLED=0`。
 
-默认用户额度为100会话/1任务/2环境/1GiB工作文件软额度，管理HTTP可在线修改个人策略。全局AH_CAPACITY不变。空间软检查不包括Claude状态/日志/数据库，不保证任务执行中磁盘不超额。费用仅为已观测SDK累计值的差额估算。
+- **应用只读问数**
+
+  启用条件：应用观测和托管钱包网关可用。
+
+  关闭方式：`AH_APP_ANALYSIS_ENABLED=0`。
+
+- **Langfuse 观测**
+
+  启用条件：地址、公钥和密钥三项齐全。
+
+  关闭方式：清空三项并重启相关服务。
+
+具体配置见 [账号与登录](identity.md)、[应用创建](applications.md)、[应用访客登录](application-login.md)、[应用运营分析](application-observability.md) 和 [模型与任务观测](llm-observability.md)。
+
+## 模型网关和计费
+
+按安装指南创建的实例已生成网关配置。供应商 API Key 在 [模型接入向导](llm-gateway.md) 中填写。
+
+- `AH_LITELLM_MANAGEMENT_URL`
+
+  Harbor 宿主可访问的网关管理地址
+
+- `AH_LITELLM_INFERENCE_URL`
+
+  任务容器可访问的网关推理地址
+
+- `AH_LITELLM_MASTER_KEY`
+
+  网关管理密钥，须与网关一致
+
+- `AH_LITELLM_SALT_KEY`
+
+  网关保存凭据使用的加密密钥，长期保留并备份
+
+- `AH_LITELLM_DATABASE_URL`
+
+  网关专用数据库连接串
+
+- `AH_WALLET_INFERENCE_URL`
+
+  任务容器可访问的 Harbor 计费入口，以 `/inference` 结尾
+
+- `AH_LLM_DEFAULT_DEPLOYMENT_ID`
+
+  可选，工作台默认模型 ID
+
+- `AH_LLM_POLICY_FILE`
+
+  可选，管理员维护的网关速率、供应商成本与请求超时策略文件
+
+- `AH_LLM_SESSION_BUDGET_USD`
+
+  可选，新执行环境调用凭据的美元预算；重建凭据时重新计算，不是用户累计额度
+
+宿主与容器访问同一服务时可能需要不同地址：`127.0.0.1` 指向当前机器或容器自身，任务容器访问宿主通常使用 `host.docker.internal`。托管安装会按运行环境准备入口，不要直接把宿主回环地址复制给容器。
+
+已经配置托管网关的实例在配置缺项或不可用时会阻止模型任务，避免绕开额度控制。关闭钱包会停止 Harbor 扣费；供应商调用仍可能产生费用。
+
+## 登录配置
+
+- `AH_WORKBENCH_AUTH_SECRET`
+
+  邮箱密码登录的私有认证密钥，至少 32 字符
+
+- `AH_WORKBENCH_REGISTRATION`
+
+  `false` 关闭成员注册；省略时按前置条件自动启用
+
+- `AH_KEY_LOGIN`
+
+  默认 `true`；`false` 只关闭网页登录密钥入口
+
+- `AH_OIDC_ISSUER`
+
+  `AH_OIDC_CLIENT_ID`
+
+  `AH_OIDC_CLIENT_SECRET`
+
+  按需接入统一身份系统
+
+- `AH_SERVICE_URL`
+
+  `AH_SERVICE_TOKEN`
+
+  CLI 使用的服务地址和个人访问密钥，与供应商凭据分开
+
+操作步骤与回调地址见 [账号与登录](identity.md)。
+
+## 任务资源和执行环境
+
+- `AH_CAPACITY`
+
+  `4`，同时打开的执行环境上限，包含启动中和空闲环境
+
+- `AH_IDLE_TIMEOUT_MS`
+
+  `900000`，任务结束后空闲 15 分钟回收环境
+
+- `AH_TASK_TIMEOUT_MS`
+
+  `0`，不设单轮总时限；正数表示毫秒，超时关闭执行环境
+
+- `AH_MAX_TURNS`
+
+  `0`，不设平台 Agent 轮数上限
+
+- `AH_MAX_BUDGET_USD`
+
+  `0`，不设 SDK 估算费用上限；内部钱包单独生效
+
+- `AH_INTERRUPT_TIMEOUT_MS`
+
+  `5000`，等待停止操作的毫秒数，超时强制关闭环境
+
+- `AH_RESIDENT_BACKEND`
+
+  默认 `docker`，也可选单机 Linux 的 `opensandbox`
+
+- `AH_OPENSANDBOX_RUNNER_ORIGIN`
+
+  `AH_OPENSANDBOX_RUNNER_KEY`
+
+  选用 OpenSandbox 时的本机管理服务地址与私有密钥
+
+- `AH_APP_RUNTIME_BACKEND`
+
+  应用运行后端，默认 `docker`，按需设为 `opensandbox`
+
+OpenSandbox 需要另外部署同主机管理服务，服务进程以 Linux UID 1000 运行。任务和应用后端分别配置；不要只改一个开关就认为所有用途都已启用。完整部署步骤见 [OpenSandbox 部署说明](https://github.com/chenyk2016/agent-harbor/blob/main/infra/opensandbox/README.md)。
+
+用户自己的会话数、并行任务、保留环境和工作文件额度在 [管理后台](admin.md) 设置。全局环境容量与个人额度共同生效。
+
+## 数据保存在什么地方
+
+- 实例目录的 `harbor.env`
+
+  私有部署配置
+
+- `AH_DATA_DIR`
+
+  会话工作文件、原生会话状态、技能和应用相关文件
+
+- 工作台 PostgreSQL
+
+  账号、会话历史、模型配置、内部额度和管理记录
+
+- 网关 PostgreSQL
+
+  网关配置和用量
+
+- 应用与观测数据库
+
+  启用相关功能后使用的独立业务记录和运营数据
+
+保留整个数据目录，避免按内部文件名手工清理。释放空间使用产品提供的 [删除操作](deletion.md)，备份范围见 [团队部署与备份](deployment.md)。
+
+[返回配置与管理](manage.md)
