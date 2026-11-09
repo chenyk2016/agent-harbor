@@ -17,16 +17,25 @@ title: 账号与登录
 
 ## 管理员访问密钥
 
-首次安装按 [安装指南](quickstart.md) 执行 `harbor init`。初始化需要 `AH_BOOTSTRAP_ADMIN_KEY`，格式为 32 至 128 个 ASCII 字母、数字、下划线或短横线。仅通过初始化命令传入时，密钥会保存在实例的私有 `first-admin.key` 文件中，请另存到密码管理器。
+管理员密钥由环境变量 `AH_BOOTSTRAP_ADMIN_KEY` 提供，保存在服务实际加载的私有环境文件中：
 
-需要从配置文件管理或轮换密钥时，在服务实际加载的私有环境文件中填写：
+| 启动方式 | 配置文件 |
+| --- | --- |
+| 按安装指南创建的实例 | 实例目录的 `harbor.env`，启动时通过 `--env-file` 加载 |
+| 源码目录执行 `npm run server` | 项目根目录的 `.env` |
+
+在对应文件中设置：
 
 ```dotenv
 AH_ADMIN_USERS=operator
 AH_BOOTSTRAP_ADMIN_KEY=replace-with-a-private-random-key-at-least-32-characters
 ```
 
-`AH_ADMIN_USERS` 在此方式下必须只有一个管理员 ID。托管安装加载实例的 `harbor.env`；`npm run server` 加载项目根目录的 `.env`。修改后重启服务，使用新密钥登录。旧密钥不能建立新登录，已有浏览器登录仍按原有效期处理。
+`AH_ADMIN_USERS` 必须只有一个管理员内部 ID。密钥长度为 32 至 128 个字符，只允许 ASCII 字母、数字、下划线和短横线；可用 `openssl rand -hex 32` 生成。
+
+首次安装先保存配置，再执行 [安装指南](quickstart.md#配置并初始化管理员) 的初始化命令。后续修改密钥只需更新同一个环境文件并重启服务，无需重新运行初始化命令。登录时使用环境文件中的当前值。
+
+重启后旧密钥不能建立新登录，已有浏览器登录仍按原有效期处理。已在进程环境中导出的同名变量会优先于启动时的环境文件值，修改文件后应确认没有被外部设置覆盖。环境文件含密钥，不要提交到 Git。
 
 ## 启用邮箱密码
 

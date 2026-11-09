@@ -41,14 +41,28 @@ npm run harbor -- install --dir "$HARBOR_DIR"
 
 `configure` 生成实例配置；`install` 启动专用数据库和模型网关，并初始化所需数据结构。若已取得源码，可以跳过克隆和进入目录两行。
 
-## 初始化管理员
+## 配置并初始化管理员
+
+管理员登录密钥通过环境变量 `AH_BOOTSTRAP_ADMIN_KEY` 配置。先生成一个随机值：
 
 ```sh
-AH_BOOTSTRAP_ADMIN_KEY="$(openssl rand -hex 32)" \
-  npm run harbor -- init --dir "$HARBOR_DIR" --admin operator
+openssl rand -hex 32
 ```
 
-初始化后，用编辑器打开实例目录中的 `first-admin.key`，将登录密钥保存到密码管理器。也可以在首次运行 `init` 前把密钥写进实例私有的 `harbor.env`，后续由该文件管理。 [管理员密钥设置](identity.md)
+用编辑器打开实例目录中的 `harbor.env`，将生成的值填入以下配置。已有同名配置时直接修改，不要重复添加：
+
+```dotenv
+AH_ADMIN_USERS=operator
+AH_BOOTSTRAP_ADMIN_KEY=replace-with-your-generated-random-key
+```
+
+保存后初始化管理员。命令会读取该实例的 `harbor.env`：
+
+```sh
+npm run harbor -- init --dir "$HARBOR_DIR" --admin operator
+```
+
+后续启动也加载同一个环境文件。更换管理员密钥时修改其中的 `AH_BOOTSTRAP_ADMIN_KEY` 并重启服务即可，无需再次初始化。详细规则见 [管理员密钥设置](identity.md#管理员访问密钥)。
 
 ## 启动并登录
 
@@ -57,7 +71,7 @@ npm run harbor -- doctor --dir "$HARBOR_DIR" --runtime
 node --env-file="$HARBOR_DIR/harbor.env" dist/src/service/server.js
 ```
 
-打开 **http://127.0.0.1:4318/**，选择访问密钥登录，使用环境文件中配置的密钥，或初始化时写入 `first-admin.key` 的密钥。首次登录后查看管理员入口。另开终端验证依赖与服务，路径沿用上面的实例目录。
+打开 **http://127.0.0.1:4318/**，选择访问密钥登录，使用 `harbor.env` 中配置的 `AH_BOOTSTRAP_ADMIN_KEY` 登录。首次登录后查看管理员入口。另开终端验证依赖与服务，路径沿用上面的实例目录。
 
 ```sh
 curl --fail --silent --show-error http://127.0.0.1:4318/api/health

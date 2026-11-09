@@ -51,7 +51,7 @@ node --env-file=/absolute/instance/harbor.env dist/src/service/server.js
 
 - `AH_BOOTSTRAP_ADMIN_KEY`
 
-  首次初始化必需；服务启动时也可用来管理单个管理员的访问密钥
+  管理员登录密钥，首次初始化和服务启动都从对应环境文件加载；修改后重启生效
 
 新建实例时，端口可通过 `configure` 的 `--port`、`--db-port`、`--gateway-port`、`--gateway-db-port` 设置。默认分别为 `4318`、`55432`、`4320`、`55433`；Linux 另用工作台端口减 1 作为内部推理入口。已有实例不能重新 `configure`。
 
