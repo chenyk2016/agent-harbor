@@ -1,4 +1,6 @@
-# Migration
+# 历史迁移记录
+
+> 本文保留早期版本切换记录，不用于新安装，也不代表当前部署仍使用SQLite或Drizzle Kit。当前控制库为PostgreSQL，结构由仓库SQL脚本管理；首次部署见[安装指南](quickstart.md)，恢复见[备份说明](deployment.md)。
 
 当前品牌、npm包名和Docker镜像前缀统一为`agent-harbor`，配置统一为`AH_*`。已有部署升级时需要同步配置和重建镜像。
 

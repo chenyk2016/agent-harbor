@@ -7,7 +7,7 @@ title: 安装与启动
 
 ## 检查环境
 
-准备 Node.js **24.19+**、npm **11+**、Python 3、Git、OpenSSL、运行中的 Docker Engine 和 Compose v2，以及用于镜像、依赖和任务文件的可用磁盘空间。推荐 Linux 专用主机。macOS 可用于本地运行，安装后用 `doctor --runtime` 检查实际兼容性。
+准备 Node.js **24.19+**、npm **11+**、Python 3、Git、OpenSSL、运行中的 Docker Engine 和 Compose v2，以及用于镜像、依赖和任务文件的可用磁盘空间。实例所在磁盘至少保留 1 GiB 空间，镜像和实际任务另需空间。推荐 Linux 专用主机。macOS 可用于本地运行，安装后用 `doctor --runtime` 检查实际兼容性。
 
 ```sh
 node --version

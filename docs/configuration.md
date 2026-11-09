@@ -13,7 +13,7 @@ Harbor 的部署配置保存在私有环境文件中；模型、成员和价格�
 node --env-file=/absolute/instance/harbor.env dist/src/service/server.js
 ```
 
-源码手工部署可复制 `.env.example` 为 `.env`，由 `npm run server` 加载。已在进程环境中导出的同名变量优先于文件值。修改环境文件后重启服务；需要同时交给网关的设置，还须按相应功能说明重新创建网关容器。
+源码手工部署可复制 `.env.example` 为 `.env`，由 `npm run server` 加载。需填写可用的数据库、管理员密钥和已构建的执行镜像；示例中的镜像标签不会自动下载或构建。已在进程环境中导出的同名变量优先于文件值。修改环境文件后重启服务；需要同时交给网关的设置，还须按相应功能说明重新创建网关容器。
 
 环境文件包含数据库密码和密钥，应限制访问并随实例备份，不加入版本库。
 
@@ -113,7 +113,7 @@ node --env-file=/absolute/instance/harbor.env dist/src/service/server.js
 
   关闭方式：清空三项并重启相关服务。
 
-具体配置见 [账号与登录](identity.md)、[应用创建](applications.md)、[应用访客登录](application-login.md)、[应用运营分析](application-observability.md) 和 [模型与任务观测](llm-observability.md)。
+具体配置见 [账号与登录](identity.md)、[应用功能配置](application-configuration.md) 和 [模型与任务观测](llm-observability.md)。
 
 ## 模型网关和计费
 
@@ -229,7 +229,7 @@ node --env-file=/absolute/instance/harbor.env dist/src/service/server.js
 
   应用运行后端，默认 `docker`，按需设为 `opensandbox`
 
-OpenSandbox 需要另外部署同主机管理服务，服务进程以 Linux UID 1000 运行。任务和应用后端分别配置；不要只改一个开关就认为所有用途都已启用。完整部署步骤见 [OpenSandbox 部署说明](https://github.com/chenyk2016/agent-harbor/blob/main/infra/opensandbox/README.md)。
+OpenSandbox 需要另外部署同主机管理服务，服务进程以 Linux UID 1000 运行。任务和应用后端分别配置；不要只改一个开关就认为所有用途都已启用。OpenSandbox会话容器单次最长保留1小时，后续消息可重建；将平台总时限设为0不会取消后端的容器期限。完整部署步骤见 [OpenSandbox 部署说明](https://github.com/chenyk2016/agent-harbor/blob/main/infra/opensandbox/README.md)。
 
 用户自己的会话数、并行任务、保留环境和工作文件额度在 [管理后台](admin.md) 设置。全局环境容量与个人额度共同生效。
 
@@ -255,6 +255,6 @@ OpenSandbox 需要另外部署同主机管理服务，服务进程以 Linux UID 
 
   启用相关功能后使用的独立业务记录和运营数据
 
-保留整个数据目录，避免按内部文件名手工清理。释放空间使用产品提供的 [删除操作](deletion.md)，备份范围见 [团队部署与备份](deployment.md)。
+保留整个数据目录，避免按内部文件名手工清理。自定义到 `AH_DATA_DIR` 之外的应用或其他资源目录，需要单独纳入备份；内置备份不会自动遍历这些外部位置。释放空间使用产品提供的 [删除操作](deletion.md)，备份范围见 [团队部署与备份](deployment.md)。
 
 [返回配置与管理](manage.md)

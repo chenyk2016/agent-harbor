@@ -61,9 +61,9 @@ node --env-file="$HARBOR_DIR/harbor.env" dist/src/service/db/migrate.js
 
 - `AH_APP_AUTH_DOMAIN`：应用域后缀，例如 `apps.example.net`，配置通配 DNS 和 HTTPS。
 
-- `AH_APP_AUTH_EDGE_DIAL`：Caddy 访问 Harbor 的内部地址，例如 `127.0.0.1:4318`。
+- `AH_APP_AUTH_EDGE_DIAL`：Caddy 访问 Harbor 的内部地址，只接受 `127.0.0.1:端口` 或 `host.docker.internal:端口`，端口为 1 至 65535。
 
-- `AH_APP_AUTH_EDGE_TOKEN`：Harbor 与 Caddy 共用的随机校验密钥，至少 32 字符。
+- `AH_APP_AUTH_EDGE_TOKEN`：Harbor 与 Caddy 共用的随机校验密钥，32 至 128 个 ASCII 字母、数字、下划线或短横线，可用 `openssl rand -hex 32` 生成。
 
 - `AH_APP_AUTH_SIGNING_KEY`：Base64 编码的 PKCS#8 DER Ed25519 私钥。
 
@@ -73,7 +73,7 @@ node --env-file="$HARBOR_DIR/harbor.env" dist/src/service/db/migrate.js
 
 认证域与工作台管理域不能位于应用通配域内。PocketBase 应持久化 `pb_data`，并只向受信服务开放。
 
-默认账号服务为 PocketBase。可选设置 `AH_APP_AUTH_BACKEND=better_auth`，并设置至少 32 字符的 `AH_APP_AUTH_BETTER_SECRET`，将账号保存在 Harbor 数据库中。当前启用检查仍要求填写上述 PocketBase 地址和凭据，选择 Better Auth 时也需要准备这些配置。
+默认账号服务为 PocketBase。可选设置 `AH_APP_AUTH_BACKEND=better_auth`，并设置至少 32 字符的 `AH_APP_AUTH_BETTER_SECRET`，让之后首次开通的应用环境把访客账号保存在 Harbor 数据库中。已经开通的应用环境保留原账号服务，不会因修改此项而转移已有账号。当前启用检查仍要求填写上述 PocketBase 地址和凭据，选择 Better Auth 时也需要保留这些配置项。
 
 私钥可在私有终端生成后保存进配置，不应提交到 Git：
 
@@ -143,7 +143,7 @@ AH_APP_AUTH_BETTER_GOOGLE_PRODUCTION_SECRET=replace-with-production-secret
 
 普通认证域继续承接独立登录和 Google 回调。
 
-设置 `AH_APP_AUTH_ENABLED=0` 可关闭访客认证；要求登录的应用不会因配置缺失而自动变成公开应用。
+设置 `AH_APP_AUTH_ENABLED=0` 可关闭访客认证。已经启用登录保护的应用不会因认证配置缺失而在重新部署时自动开放。首次构建的新应用只采用当前可用的登录方式；没有可用方式时可能生成公开入口，因此首次预览后应在「工作台 → 用户」核对实际登录状态，再决定是否发布。
 
 ## 应用观测
 

@@ -1,5 +1,7 @@
 # Agent Harbor 工作台登录开发规格
 
+> 阅读范围：本文件保留工作台认证的开发规格，不作为当前全部账号服务配置的说明。工作台邮箱认证使用 Better Auth；应用访客可选择 PocketBase 或 Better Auth，分别见[账号与登录](../identity.md)和[应用功能配置](../application-configuration.md)。
+
 2026-11-06 · 认证方式、自助注册、10 元赠额及原管理员绑定已确认
 
 > 当前部署与注册启用条件见[管理员与工作台登录](../identity.md)。

@@ -1,4 +1,4 @@
-# 从一条消息阅读V3
+# 从一条消息阅读服务实现
 
 先读正常执行，再读中断和故障。每层只承担自己的职责。
 
@@ -9,7 +9,7 @@ clients/cli/main：用户提交
   → service/session-manager.submit：去重、容量、保存accepted、占位
   → session-manager.execute：服务持有Conversation和取消控制器
   → runtime/conversation.run：准备、启动、等待结果、收尾
-  → runtime/runner-channel.run：通过Docker管道发一行JSON
+  → runtime/runner-channel.run：通过选定后端发送JSON行（Docker管道或OpenSandbox私有socket）
   → agent/resident-runner：异步输入源送给同一次query
 ```
 
@@ -23,7 +23,7 @@ clients/cli/main：用户提交
 | 请求重试为何不会重复执行？ | submit先查duplicate；ServiceStore.accept事务和唯一索引 |
 | 多行消息为何不会切断？ | JSON.stringify编码换行；Runner按完整JSON行解析 |
 | 为什么不用每轮启动Claude？ | resident-runner的userMessages持续yield，result后只清activeTask |
-| 取消如何不关容器？ | conversation.cancelTurn请求interrupt，finishTurn保留已结束的原生中断环境 |
+| 取消何时保留环境？ | 普通Docker任务由cancelTurn请求interrupt；本地MCP或OpenSandbox走整环境停止，finishTurn核对结果 |
 | 怎么防止迟到中断影响下一轮？ | resident-runner的interrupting，agent.result等待中断控制请求完成 |
 | 谁负责最终关容器？ | conversation.stopEnvironment；DockerBackend.stop再次inspect确认 |
 | 服务重启怎么办？ | recovery先取全部锁、停止旧环境、未完成消息标interrupted |

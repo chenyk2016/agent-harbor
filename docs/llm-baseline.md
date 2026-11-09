@@ -1,13 +1,13 @@
 # LiteLLM operator baseline
 
-Enable `AH_LLM_POLICY_FILE=infra/llm-policy.json` after applying `0012_gateway_usage.sql` and verifying the gateway configuration in an isolated instance.
+Enable `AH_LLM_POLICY_FILE=infra/llm-policy.json` after initializing the control database through the [installation workflow](quickstart.md) and verifying the gateway configuration in an isolated instance. The values below describe the bundled policy; administrator-managed cost and timeout rows may override the per-model values.
 
 Supplier USD rates and request timeouts can now be maintained in the admin console as versioned cost rows keyed by provider and upstream model. The operator policy file remains a fallback and still supplies the global user RPM; its `models` map may be empty once rates are managed in the database. It does not change the RMB selling prices saved by the wallet administrator. The bundled DeepSeek rates use the documented standard/peak price; automatic off-peak and Chinese public-holiday pricing are not enabled. Review rates before enabling another provider or model with the same upstream name.
 
 ## User and key policy
 
 - Each Harbor owner maps to one `harbor:<ownerId>` internal gateway user.
-- User RPM is 60. TPM and request concurrency limits are not set. Budget duration is null: cumulative budgets do not reset automatically.
+- The bundled policy sets user RPM to 60; `userRpmLimit` is configurable. TPM and request concurrency limits are not set. Budget duration is null: cumulative budgets do not reset automatically.
 - Environment keys remain `llm_api`, with one allowed deployment and a stable logical alias. They belong to the gateway user and do not receive a separate full user allowance.
 - Harbor still owns session writer locks, task/environment resource limits and confirmed container cleanup. Unset gateway concurrency limits do not remove those execution boundaries.
 - Startup and authorization preparation read back applied identity, rates and limits. A missing model policy or unconfirmed update blocks execution rather than silently falling back.

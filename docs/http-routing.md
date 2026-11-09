@@ -1,6 +1,6 @@
 # HTTP 路由与请求边界
 
-V9 使用 Express 5。HTTP 层负责匹配方法与路径、认证、输入解析及响应；业务服务继续负责归属、版本、额度、撤销和运行状态。换路由框架不改变进程隔离边界：API、MCP 网关和容器管理器仍在同一个宿主进程。
+当前服务使用 Express 5。HTTP 层负责匹配方法与路径、认证、输入解析及响应；业务服务继续负责归属、版本、额度、撤销和运行状态。换路由框架不改变进程隔离边界：平台API和执行环境管理器仍在同一个宿主进程；普通MCP由会话内的原生客户端直连，不再经过平台协议网关。
 
 ## 从入口阅读
 
@@ -12,11 +12,11 @@ V9 使用 Express 5。HTTP 层负责匹配方法与路径、认证、输入解�
 2. `GET /api/health` 公开，不经过登录和 Origin 检查。
 3. 检查浏览器 Origin，挂载登录、OIDC 回调和退出等公开身份路由。
 4. 校验 Cookie 或 Bearer、浏览器身份切换和写操作的 Origin/CSRF，将身份与撤销信号放入 `response.locals.principal`。
-5. 挂载个人账户、MCP、Skill、专家、会话和文件 Router。
+5. 挂载管理后台、个人账户、钱包、模型、应用、MCP配置、Skill、专家、会话和文件 Router。
 6. 未匹配 API 返回 404；只有已知页面和构建资源进入网页 Router。
 7. 最后的错误中间件统一转换业务异常和解析异常。
 
-这里不使用全局 `express.json()`。认证在业务 JSON 解析之前，未登录的大正文不会先触发业务解析；文件、ZIP 和 MCP 也不会被误当成 JSON 消费。
+这里不使用全局 `express.json()`。认证在业务 JSON 解析之前，未登录的大正文不会先触发业务解析；文件和ZIP也不会被误当成JSON消费。计费推理入口`/inference`、应用访客认证入口`/__harbor/visitor`在`/api`之外独立挂载，使用各自的身份校验。
 
 ## 模块分工
 
@@ -30,7 +30,9 @@ V9 使用 Express 5。HTTP 层负责匹配方法与路径、认证、输入解�
 | `src/service/files/http.ts`    | 文件列表、预览、流式下载和上传；继承父级 sessionId                  |
 | `src/service/http/shared.ts`   | 身份读取、参数读取、JSON/二进制限长、404 和错误转换                 |
 | `src/service/web-assets.ts`    | 已知页面及资源的白名单匹配、静态响应头                              |
-| `src/service/mcp/gateway.ts`   | 独立端口的 `/mcp/:bindingId` 原生协议入口                           |
+| `src/service/applications/http.ts` | 应用创建、版本、发布、数据与分析操作 |
+| `src/service/admin/http.ts` | 管理员权限、审计和管理操作 |
+| `src/service/wallet/proxy.ts` | `/inference`计费推理入口 |
 
 路由直接声明方法和参数，例如：
 
@@ -40,7 +42,7 @@ router.put(
   ...jsonBody(),
   async (request, response) => {
     response.json(
-      await gateway.service.save(
+      await service.save(
         principal(response).userId,
         jsonInput(request),
         parameter(request, "connectionId"),
@@ -56,13 +58,13 @@ router.put(
 
 ## 正文和长连接
 
-- 普通 JSON 默认上限 256 KiB；Skill/专家的相关编辑接口为 2 MiB。只接受对象；空正文、数组、null 和损坏 JSON 返回 400，超限返回 413。保留旧客户端不填 JSON Content-Type 的兼容行为，不接受压缩正文。
+- 普通 JSON 默认上限 256 KiB；Skill/专家的相关编辑接口为 2 MiB，MCP脚本编辑接口为 1 MiB。只接受对象；空正文、数组、null 和损坏 JSON 返回 400，超限返回 413。保留旧客户端不填 JSON Content-Type 的兼容行为，不接受压缩正文。
 - ZIP 导入保留原始字节，限制 20 MiB；超限排空输入后返回 413。ZIP 内容的安全校验由原有包服务执行。
 - 文件上传继续把原始流交给文件层，下载使用 `pipeline()` 保留背压。退出登录、断线、超时和服务关闭信号仍能中断传输。
 - SSE 沿用事件游标、历史补看和取消行为，不经 JSON parser。
-- MCP 使用独立 Express 应用匹配 `/mcp/:bindingId`，以 Binding 的短期 Bearer 凭证认证，正文由 MCP SDK transport 读取。不能套用网页 Cookie 或全局 JSON parser；上游异常仍统一拒绝，避免返回凭据。
+- 平台MCP路由只管理连接、模板、脚本和探测；实际MCP协议由会话内的Claude Code原生客户端处理。远程HTTP目标需管理员批准，本地stdio工具经可信启动器和srt运行；不存在`/mcp/:bindingId`协议入口。
 
-## 迁移时容易遗漏的细节
+## 路由边界需要保留的细节
 
 - Router 挂载 `/api` 后，`request.url` 会临时移除前缀。OIDC 回调显式传 `request.originalUrl` 给供应商校验，避免 redirect URI 变成缺少 `/api` 的路径；查询串也从 originalUrl 解析，保留重复 version 参数。
 - Express 默认可以把空 JSON 正文当作 `{}`，这里额外拒绝，以保留旧错误契约。

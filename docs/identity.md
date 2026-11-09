@@ -69,7 +69,7 @@ node --env-file=/srv/harbor-instance/harbor.env \
 
 邮箱登录、HTTPS 和托管钱包网关都就绪后，省略 `AH_WORKBENCH_REGISTRATION` 或设为 `true` 会开放自助注册。设为 `false` 并重启可关闭；已开通的账号仍能登录。
 
-注册使用邮箱和密码，无需邮箱验证码。新用户按当前注册赠送规则获得一次模型额度，默认 10 元；这是 Harbor 内部额度。管理员在 [计费设置](wallet.md) 调整赠送金额。
+注册使用邮箱和密码，无需邮箱验证码，密码须为 12–128 个字符。邮箱自助注册当前固定赠送一次 **10 元**内部模型额度，暂不随后台「注册赠送」设置调整；将该设置改为 0 也不会关闭这笔赠送。需要停止新账号开通时，请关闭自助注册。其他赠送规则见 [额度与计费](wallet.md)。
 
 ## 配置 OIDC 单点登录
 
@@ -88,11 +88,11 @@ AH_OIDC_CLIENT_ID=replace-with-client-id
 AH_OIDC_CLIENT_SECRET=replace-with-private-client-secret
 ```
 
-身份提供方须支持 `client_secret_post` 和 RS256/JWKS 身份令牌。登录后确认工作台中的内部用户 ID，再按实际授权维护 `AH_ADMIN_USERS`。
+身份提供方须支持 `client_secret_post`、PKCE，以及可通过发现文档和 JWKS 校验的签名身份令牌。登录后确认工作台中的内部用户 ID，再按实际授权维护 `AH_ADMIN_USERS`。
 
 ## 个人密钥和共享电脑
 
-成员在「用量与密钥」创建或撤销个人访问密钥。CLI 使用个人密钥，见 [命令行使用](cli.md)。设置 `AH_KEY_LOGIN=false` 只关闭网页登录密钥入口，CLI 仍可使用 Bearer 密钥；关闭前先确认其他网页登录方式正常。
+成员在「设置 → 访问密钥」创建或撤销个人访问密钥。CLI 使用个人密钥，见 [命令行使用](cli.md)。设置 `AH_KEY_LOGIN=false` 只关闭网页登录密钥入口，CLI 仍可使用 Bearer 密钥；关闭前先确认其他网页登录方式正常。
 
 浏览器会保存草稿和会话选择。共享电脑使用后应退出登录；退出会清理当前用户的浏览器本地内容，服务端会话和文件会保留。
 

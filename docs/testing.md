@@ -15,12 +15,13 @@ npm run audit:public
 
 ## Docker与原生SDK
 
-先构建正式与协议夹具镜像：
+以下命令用于专用测试引擎。原生验证脚本读取默认运行镜像 `agent-harbor:0.6.3`，协议夹具读取其 `-test` 标签；部分网页夹具及测试Dockerfile仍固定引用 `0.4.0`，需要给同一当前镜像添加测试别名。这些是测试标签，不是发布版本。不要在现用实例的引擎上覆盖正在使用的标签。
 
 ```sh
 npm run build
-docker build -f infra/Dockerfile -t agent-harbor:0.4.0 .
-docker build -f tests/Dockerfile -t agent-harbor:0.4.0-test .
+docker build -f infra/Dockerfile.release -t agent-harbor:0.6.3 .
+docker tag agent-harbor:0.6.3 agent-harbor:0.4.0
+docker build -f tests/Dockerfile -t agent-harbor:0.6.3-test .
 npm run verify:docker
 npm run verify:layout
 npm run verify:native

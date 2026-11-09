@@ -1,6 +1,8 @@
 # Agent Harbor 应用访客 Better Auth 改造规格
 
-2026-11-06 · 技术方向已确认，待实施
+2026-11-06 · 目标规格；2026-11-09 已按源码更新实现边界
+
+> 当前已有 Better Auth 访客后端、独立账号范围、密码及 Google 路由、停用与删除接线，见 `src/service/applications/visitor-auth/better-auth.ts`、`service.ts` 和 `http.ts`。`AH_APP_AUTH_BACKEND` 只决定首次开通范围的后端，省略时仍默认 PocketBase，已有范围不自动切换。本文真实 Google、恢复和既有账号转换等验收门槛仍需分别取证，不能从代码存在推断通过。当前配置见[应用功能配置](../application-configuration.md#访客登录)。
 
 新应用的访客认证目标采用 Harbor 托管的 Better Auth + PostgreSQL。账号仍按应用、预览或正式环境、登录方式隔离。Better Auth 负责验证邮箱密码或 Google 身份，Harbor 继续管理应用访客 ID、权限、停用和应用会话。既有 PocketBase 应用保持原认证后端。既有应用在新测试应用通过真实 Google、浏览器回跳与停用验收后逐个迁移。
 
@@ -62,6 +64,6 @@
 
 一次切换只处理一个应用环境。先核对旧会话、停用状态、业务数据和映射，保留可回退配置与旧凭据数据，再按新旧入口分别实测。完成备份恢复和授权数据核对后才结束该应用迁移。
 
-已验证 Better Auth 1.7.18 的隔离原型，包括两个应用、四个环境范围、密码、会话、停用和 Google 替身回调。正式实现、真实 Google 授权、Harbor 端到端回跳及旧应用兼容仍待验收。 [隔离报告](../../var/evidence/visitor-better-auth/2026-11-06/REPORT.md)
+已验证 Better Auth 1.7.18 的隔离原型，包括两个应用、四个环境范围、密码、会话、停用和 Google 替身回调。正式后端现已接入；真实 Google 授权、目标环境回跳、恢复及既有应用兼容的验收状态应单独核对，不能将该隔离原型报告当作这些结果。 [隔离报告](../../var/evidence/visitor-better-auth/2026-11-06/REPORT.md)
 
 相关依据：[当前 PocketBase 应用认证](application-visitor-auth.md) · [工作台认证](workbench-better-auth.md) · [Better Auth PostgreSQL](https://better-auth.com/docs/adapters/postgresql)

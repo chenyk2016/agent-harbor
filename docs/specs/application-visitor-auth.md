@@ -1,6 +1,6 @@
 # 应用访客登录技术方案
 
-本文记录首版 PocketBase 方案。当前启用条件和两种后端的部署配置见[应用访客登录](../application-login.md)。新应用的目标方案见 [Better Auth 改造规格](application-visitor-better-auth.md)。
+本文保留 2026-11-05 首版 PocketBase 技术方案及当时状态。2026-11-09 源码复核：PocketBase 与 Better Auth 两种后端均已有实现，所需配置齐备后自动启用；正文“默认关闭”和历史演进说明不作为当前配置依据。当前行为见[应用访客登录](../application-login.md)，部署条件见[应用功能配置](../application-configuration.md#访客登录)。[Better Auth 规格](application-visitor-better-auth.md)保留目标和验收要求，不等于所有验收已完成。
 
 2026-11-05，实现默认关闭。Harbor 使用一个私有 PocketBase 实例管理访客账号，在现有 Node 服务内增加应用认证模块。邮箱作为密码账号的登录标识。每个应用的预览和正式环境拥有各自的会话、用户管理入口，以及按登录方式隔离的账号集合。每个测试或正式安装环境使用一套 Google Web OAuth 客户端和一个固定回调。
 
@@ -70,6 +70,8 @@
 1. Caddy 清理外部提交的身份头，根据已登记路由把应用环境和部署身份交给 Harbor 的私有认证检查入口。Harbor 校验 Cookie 哈希、应用环境、会话期限、账号状态和写请求来源。Caddy 可用现有 JSON 配置表达与 `forward_auth` 等价的预检查。 [Caddy 预检查](https://caddyserver.com/docs/caddyfile/directives/forward_auth)
 2. 校验成功后，Harbor 用平台私钥签发短时身份断言，包含 `appId`、`environment`、`deploymentId`、应用内用户 ID 和到期时间。Caddy 在清理外部凭据后只注入本次预检查返回的断言，再将请求传给 Runtime。浏览器 Cookie 和 PocketBase token 留在可信服务侧。
 3. 固定 Runtime 用部署注入的公钥验证断言和作用域，再进入 `register()` 等业务路由。可向业务路由提供可信的用户 ID，应用源码只读取所需身份。旧路径、伪造头以及绕过 Caddy 直接访问容器的请求均由 Runtime 的验证覆盖。部署健康检查使用原有公开健康端点，回读时改用该环境真实入口 URL。
+
+2026-11-09 当前数据接口边界：`formatVersion: 1` 的通用表接口仍分别检查 `publicRead` 和 `publicCreate`；没有 `publicWrite` 配置，登录也不会绕过这两项。`formatVersion: 2` 使用 SQL 数据结构与应用自定义业务接口，不再声明这些通用表开关。平台访客校验只挂在应用内 `/api` 路径，自定义业务路由应放在该路径下，并按可信 `request.harborUser.id` 实现所需的记录归属权限。
 
 Harbor 无法完成会话检查时，受保护 API 拒绝请求。PocketBase 暂停期间，注册、新登录与用户管理不可用，已有会话仍由 Harbor 校验。登录关闭和启用都随路由切换确认，避免留存无鉴权的旧入口。认证开启时，候选镜像必须声明并验证支持对应 Runtime 契约。回滚只有在历史产物支持该契约时才可切换，否则保留当前入口。
 

@@ -1,3 +1,5 @@
+> **阅读范围（2026-11-09）**：本文保留2026-10-23起的前端重构与验证记录，历史功能范围、截图尺寸和构建体积不是当前承诺。当前路由与依赖以`apps/web/src/app/App.tsx`和`apps/web/package.json`为准；操作与状态机制见[网页客户端](web-client.md)。
+
 # V7 React工作台
 
 ## 本次范围
@@ -44,6 +46,8 @@
 
 ## 开发和目录
 
+先按[安装指南](quickstart.md)准备数据库、管理员、执行镜像和模型。下面命令用于源码目录开发，`npm run server`只加载项目根的`.env`；托管实例应沿用其`harbor.env`启动命令。
+
 仓库根执行：
 
 ```sh
@@ -81,17 +85,18 @@ src/service/web-assets.ts   正式静态资源边界与CSP
 | 地址 | 内容 |
 | --- | --- |
 | `/` | 总入口：对话 / 应用共用输入区，发送即创建 |
-| `/sessions` | 全部会话 |
 | `/sessions/:sessionId` | 指定会话的历史、输入和事件流 |
 | `/skills` | 技能卡片目录 |
 | `/skills/:skillId` | 技能详情、文件编辑和历史版本 |
-| `/settings` | 用量与个人访问密钥 |
+| `/settings` | 重定向到`/settings/account`；账户与用量、访问密钥、外观与关于分别为子页面 |
+
+当前React路由没有独立的`/sessions`列表页，会话列表由侧栏显示。
 
 技能详情和个人设置已经从全屏弹窗改为内容页；新建、导入和未保存提醒仍是页面内弹窗。浏览器前进后退和导航链接统一经过路由；技能存在未保存修改时，确认离开或继续编辑。刷新/关页使用浏览器原生未保存提示。保存成功后生成版本的行为不变。
 
 会话页以 URL 中的 ID 为准，列表初始化不自动抢选另一会话。技能和设置页仍保留上次会话作为工作文件/会话详情工具的上下文，刷新时从当前用户本地选择恢复；没有可用会话时，工具按钮保留但停用。页面导航不会向服务发送停止任务或关闭环境请求。
 
-主要代码：`app/App.tsx` 定义路由，`features/Workbench.tsx` 保留外壳，`app/workbench-context.ts` 向内容页提供公共状态，`app/route-pages.tsx` 连接 URL 和会话选择，`features/SessionsPage.tsx` 展示会话列表。
+主要代码：`app/App.tsx` 定义路由，`features/Workbench.tsx` 保留外壳，`app/workbench-context.ts` 向内容页提供公共状态，`app/route-pages.tsx` 连接 URL 和会话选择，`features/shell/SessionList.tsx` 展示侧栏会话列表。
 
 正式服务 `src/service/web-assets.ts` 对这些页面地址返回构建后的入口，以支持直接访问和刷新；API、源码、运行目录和未知资源不采用页面回退。部署到反向代理时，也需要把上述页面地址转发给本服务。
 
