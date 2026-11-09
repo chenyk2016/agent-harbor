@@ -1,7 +1,8 @@
 ---
-layout: page
 title: 账号与登录
 ---
+
+# 账号与登录
 
 工作台账号用于登录 Agent Harbor、使用自己的会话和文件；创建的应用有独立访客账号，见 [应用访客登录](application-login.md)。
 

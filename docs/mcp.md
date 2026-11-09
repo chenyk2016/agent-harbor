@@ -1,8 +1,9 @@
 ---
-layout: page
 title: MCP 工具
 description: 连接远程服务、本地工具或个人脚本，让 Agent 在任务中调用工具。
 ---
+
+# MCP 工具
 
 MCP 是让 Agent 调用工具的连接方式。例如，连接公司提供的查询服务后，Agent 可以在对话中读取获准的数据。Harbor 支持远程 HTTP 服务、管理员提供的本地模板，以及自己编写的 Node.js/Python 脚本。
 

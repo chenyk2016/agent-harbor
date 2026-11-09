@@ -1,7 +1,8 @@
 ---
-layout: page
 title: 命令行客户端
 ---
+
+# 命令行客户端
 
 CLI 连接已经启动的 Harbor，会话和任务仍由服务管理。先按 [安装与启动](quickstart.md) 启动服务，并在工作台「设置 → 访问密钥」创建一个访问密钥。在本机私有环境提供 `AH_SERVICE_TOKEN`，团队部署同时把 `AH_SERVICE_URL` 指向实际 HTTPS 地址。
 

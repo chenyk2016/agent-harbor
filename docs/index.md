@@ -1,32 +1,57 @@
 ---
-layout: default
+layout: home
 title: Agent Harbor 文档
 description: 了解、安装和使用 Agent Harbor，完成文件任务、创建应用，并管理团队、模型和额度。
+
+hero:
+  name: Agent Harbor
+  text: 把任务交给 Agent
+  tagline: 自托管的 Claude Code 工作台。处理文件、创建 Web 应用，管理团队的模型、工具和使用额度。
+  actions:
+    - theme: brand
+      text: 开始使用
+      link: /getting-started
+    - theme: alt
+      text: 完成第一个任务
+      link: /first-task
+    - theme: alt
+      text: 了解产品
+      link: /product-overview
+
+features:
+  - icon: 📄
+    title: 处理文件与任务
+    details: 上传资料，让 Agent 分析、整理或生成文件。查看执行过程，下载结果，在同一会话中继续修改。
+    link: /first-task
+  - icon: 🛠️
+    title: 创建并发布应用
+    details: 通过对话创建 Web 应用，在预览中试用和调整，确认后发布到自己的服务器。
+    link: /applications
+  - icon: 🔑
+    title: 管理团队的使用
+    details: 为成员配置账号、模型和工具，管理权限与额度，查看请求和运行情况。
+    link: /manage
+  - icon: 🧭
+    title: 按需要配置
+    details: 从基本文件任务开始，再按需要接入技能、外部工具、应用托管和观测。
+    link: /configuration
 ---
 
-# Agent Harbor 文档
+## 从一次文件任务开始
 
-Agent Harbor 是一个自托管的 Claude Code 工作台。你可以交给 Agent 文件和任务，查看执行过程、下载结果；也可以通过对话创建 Web 应用，在预览中试用后发布到自己的服务器。
-
-## 从这里开始
-
-| 你想解决的问题 | 阅读入口 |
-| --- | --- |
-| 它适合我吗？能做什么？ | [产品介绍](product-overview.md) |
-| 我要在自己的机器上安装 | [开始使用](getting-started.md) |
-| 已有账号，想完成第一个任务 | [第一个任务](first-task.md) |
-| 我要上传文件、使用技能或创建应用 | [使用指南](guide.md) |
-| 我要接入模型、管理成员或配置服务 | [配置与管理](manage.md) |
-| 想理解会话、技能、应用和数据之间的关系 | [设计理念](concepts.md) |
-| 使用中有疑问或遇到问题 | [常见问题](faq.md) · [故障排查](troubleshooting.md) |
-
-## 一个典型任务
-
-上传一份报名 CSV，要求 Agent 按渠道汇总，生成新的 CSV 和一份说明。你可以查看它用了哪些工具，下载结果，并继续提出修改要求。
+上传一份 CSV，让 Agent 按类别汇总并生成新文件。查看它用了哪些工具，下载结果，再继续提出修改要求。
 
 ![工作台中展示任务过程，右侧文件区提供生成的 CSV。](assets/product/workbench.png)
 
-[跟着教程完成一次文件任务 →](first-task.md)
+[跟着教程完成第一个任务 →](first-task.md)
+
+## 找到你的入口
+
+- **刚了解 Harbor**：[产品介绍](product-overview.md)讲清功能和适用范围，[设计理念](concepts.md)解释会话、技能、应用和数据的关系。
+- **准备安装**：从[开始使用](getting-started.md)选择入口，按[安装与启动](quickstart.md)完成配置。
+- **已有工作台账号**：查看[使用指南](guide.md)，了解文件、技能和应用怎么用。
+- **负责团队管理**：查看[配置与管理](manage.md)，设置登录、模型、成员和额度。
+- **遇到疑问**：先查[常见问题](faq.md)或[故障排查](troubleshooting.md)，也可以用顶部搜索。
 
 ## 使用前了解
 

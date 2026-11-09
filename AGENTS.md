@@ -21,7 +21,7 @@
 - Write public docs for a first-time user: purpose, prerequisites, steps, expected result and related help.
 - Organize the site by product questions and user tasks. Keep member usage separate from administrator setup.
 - Do not mix migration history, development plans, source tours or test evidence into product guides. Keep engineering material in repository docs excluded from the site.
-- Use GitHub Pages built-in Jekyll/Minima styles. Do not add custom CSS, JavaScript or layouts for documentation.
+- Use the VitePress default documentation theme, following the kb-metabolism reference. Configure its built-in homepage, navigation, sidebar, search and page outline; do not add custom CSS, theme layouts or client components.
 - Check generated links and both desktop and mobile reading; simplify content when long tables overflow instead of adding styling.
 - When a delivery changes user-visible behavior, UI steps, defaults or configuration, review and update the related product guides in the same change before completing the task.
 - Pushes to `main` that change `docs/**` or the Pages workflow publish the documentation automatically. For an authorized push, follow the Pages run to completion and check the live pages before reporting documentation delivery complete.

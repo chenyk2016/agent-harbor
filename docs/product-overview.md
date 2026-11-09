@@ -1,8 +1,9 @@
 ---
-layout: page
 title: 产品介绍
 description: Agent Harbor 的主要功能、使用场景和适用范围。
 ---
+
+# 产品介绍
 
 Agent Harbor 把 Agent 的对话、文件和执行过程放在一个网页工作台中，并提供应用创建与团队管理能力。
 

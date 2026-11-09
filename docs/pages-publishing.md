@@ -1,38 +1,42 @@
 # 维护文档站
 
-产品文档使用 GitHub Pages 原生支持的 Jekyll 和 Minima 主题。内容写在 `docs/` 的 Markdown 文件中，不维护自定义样式、脚本或页面模板。
+产品文档使用 VitePress 默认主题，参考 kb-metabolism 的文档布局。内容写在 `docs/` 的 Markdown 文件中，使用主题自带的首页、分组侧栏、站内搜索和本页目录，不维护自定义样式、主题布局或页面组件。GitHub Pages 托管构建后的静态页面。
 
 ## 修改内容与目录
 
-每篇公开页面使用以下页头，正文从介绍或二级标题开始：
+每篇公开页面使用以下页头，并在正文中明确写出一级标题：
 
-```yaml
+```md
 ---
-layout: page
 title: 页面名称
 ---
+
+# 页面名称
 ```
 
-首页使用 `layout: default`。顶部五个入口由 `docs/_config.yml` 的 `header_pages` 排序，各入口用普通 Markdown 链接列出相关页面。站内链接保留 `.md` 后缀，`jekyll-relative-links` 在构建时转换为网页地址，因此同一份文件在 GitHub 中也能阅读。
+首页使用主题内置的 `layout: home`，通过 `hero` 和 `features` 配置介绍、入口和功能卡片。顶部导航、分组侧栏、中文搜索文案和本页目录由 `docs/.vitepress/config.mts` 配置。站内正文链接保留 `.md` 后缀，构建时转换为 `.html`，同一份文件在 GitHub 中也能阅读。
 
-页面按用户要解决的问题组织，先说明用途，再给操作、预期结果和相关入口。产品指南不放开发计划、测试记录、旧版迁移或代码阅读说明。这些工程资料留在仓库，由 `_config.yml` 的 `exclude` 排除，不进入公开站点。
+页面按用户要解决的问题组织，先说明用途，再给操作、预期结果和相关入口。产品指南不放开发计划、测试记录、旧版迁移或代码阅读说明。这些工程资料留在仓库，由站点配置的 `srcExclude` 排除，不进入公开页面或搜索。
 
 ## 本地预览
 
-准备 Ruby 3.3 和 Bundler，在 `docs/` 目录执行：
+准备 Node.js 24，在仓库根目录执行：
 
 ```sh
-bundle install
-bundle exec jekyll serve --host 127.0.0.1
+npm ci --prefix docs
+npm run dev --prefix docs -- --host 127.0.0.1
 ```
 
-打开 **http://127.0.0.1:4000/agent-harbor/**。仅构建时，在同一目录运行：
+打开 **http://127.0.0.1:5173/agent-harbor/**。检查正式构建时运行：
 
 ```sh
-bundle exec jekyll build --destination ../var/docs-site
+npm run build --prefix docs
+npm run preview --prefix docs
 ```
 
-构建依赖与 GitHub 官方 `actions/jekyll-build-pages` 使用的 `github-pages` 版本一致。检查顶部导航、站内链接、图片和手机菜单，并确认产物中没有被排除的工程资料。更换仓库或自定义域名时，修改 `_config.yml` 的 `url`、`baseurl` 和 `repository`。
+正式预览地址为 **http://127.0.0.1:4173/agent-harbor/**，产物位于 `docs/.vitepress/dist/`。依赖版本固定在文档目录自己的 `package-lock.json` 中。检查首页、侧栏、搜索、站内链接、图片和手机菜单，确认产物及搜索没有工程资料。构建保留失效链接检查；最后更新时间来自 Git 历史。
+
+更换仓库或自定义域名时，调整站点配置的 `base` 和 GitHub 链接。
 
 ## 发布到 GitHub Pages
 
@@ -57,4 +61,4 @@ bundle exec jekyll build --destination ../var/docs-site
 
 Pages 只托管静态文档，Harbor 工作台及数据库的部署单独管理。
 
-主题与发布方式见 [GitHub Pages 的 Jekyll 说明](https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/about-github-pages-and-jekyll) 和 [Minima 主题说明](https://github.com/jekyll/minima/tree/v2.5.1)。
+主题与发布方式见 [VitePress 默认主题](https://vuejs.github.io/vitepress/v1/reference/default-theme-config) 和 [GitHub Pages 部署说明](https://vuejs.github.io/vitepress/v1/guide/deploy#github-pages)。参考项目配置：[kb-metabolism](https://github.com/chenyk2016/kb-metabolism/blob/main/apps/docs/.vitepress/config.ts)。
